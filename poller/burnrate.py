@@ -47,16 +47,12 @@ def run(cfg: Config, registry: dict, stop: threading.Event | None = None) -> int
         return 1
     log.info("polling %s every %d min", ", ".join(cfg.services), cfg.interval_s // 60)
     while not stop.is_set():
-        started = time.time()
+        started = time.monotonic()
         try:
-            poll_once(cfg, store, registry, int(started))
-        except Exception as e:  # a bad cycle (disk full, locked database) must not end the loop
-            # printed directly (not just logged): logging's handler is bound once by
-            # basicConfig, so a later reconfiguration or redirected stderr would miss it
-            print(f"burnrate: poll cycle failed; trying again next interval: {e}",
-                 file=sys.stderr)
+            poll_once(cfg, store, registry, int(time.time()))
+        except Exception:  # a bad cycle (disk full, locked database) must not end the loop
             log.exception("poll cycle failed; trying again next interval")
-        stop.wait(max(1.0, cfg.interval_s - (time.time() - started)))
+        stop.wait(max(1.0, cfg.interval_s - (time.monotonic() - started)))
     log.info("stopped")
     return 0
 

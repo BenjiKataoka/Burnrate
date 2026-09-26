@@ -1,5 +1,6 @@
 import _run
 import io
+import logging
 import tempfile
 import threading
 from contextlib import redirect_stderr, redirect_stdout
@@ -35,9 +36,14 @@ def test_once_exits_1_when_a_collector_fails():
 
 
 def test_main_exits_2_on_a_config_error():
+    saved_handlers, saved_level = logging.root.handlers[:], logging.root.level
     err = io.StringIO()
-    with redirect_stderr(err):
-        assert main(["--once", "--config", "/nonexistent/config.toml"]) == 2
+    try:
+        with redirect_stderr(err):
+            assert main(["--once", "--config", "/nonexistent/config.toml"]) == 2
+    finally:
+        logging.root.handlers[:] = saved_handlers
+        logging.root.setLevel(saved_level)
     assert "not found" in err.getvalue()
 
 
@@ -53,20 +59,27 @@ def test_run_polls_then_stops_cleanly():
 def test_a_crashing_cycle_does_not_kill_the_loop():
     import burnrate
 
+    calls = []
+
     def crash(*args: object) -> None:
+        calls.append(args)
         raise RuntimeError("disk full")
     reg = {"svc": fakes.service("Svc", {"svc.used": USED}, lambda env, s: {"svc.used": 1.0})}
     cfg = fakes.config(reg, {"svc.used": 10})
+    cfg.interval_s = 0
     original, burnrate.poll_once = burnrate.poll_once, crash
     stop = threading.Event()
-    threading.Timer(0.5, stop.set).start()
-    err = io.StringIO()
+    threading.Timer(2.5, stop.set).start()
+    buf = io.StringIO()
+    handler = logging.StreamHandler(buf)
+    logging.getLogger("burnrate").addHandler(handler)
     try:
-        with redirect_stderr(err):
-            assert run(cfg, reg, stop) == 0
+        assert run(cfg, reg, stop) == 0
     finally:
         burnrate.poll_once = original
-    assert "poll cycle failed" in err.getvalue() and "disk full" in err.getvalue()
+        logging.getLogger("burnrate").removeHandler(handler)
+    assert "poll cycle failed" in buf.getvalue() and "disk full" in buf.getvalue()
+    assert len(calls) >= 2
 
 
 def test_unopenable_database_exits_1():

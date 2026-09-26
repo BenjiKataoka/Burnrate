@@ -21,7 +21,7 @@ def describe_error(e: Exception, secrets: list[str]) -> str:
 
 
 def _valid(values: object, allowed: set[str]) -> bool:
-    return (isinstance(values, dict) and set(values) <= allowed and
+    return (isinstance(values, dict) and set(values) == allowed and
             all(isinstance(v, (int, float)) and not isinstance(v, bool) and
                 math.isfinite(v) and v >= 0 for v in values.values()))
 
@@ -35,8 +35,8 @@ def collect_all(cfg: Config, registry: dict) -> dict[str, dict[str, float] | str
         try:
             values = mod.collect(cfg.env, section)
             if not _valid(values, set(mod.METRICS)):
-                raise ValueError("unexpected metric names or a value that is not a "
-                                 "non-negative number")
+                raise ValueError("missing or unexpected metric names, or a value that is "
+                                 "not a non-negative number")
             out[name] = {k: float(v) for k, v in values.items()}
         except Exception as e:  # one broken collector must never stop the others
             out[name] = describe_error(e, secrets)
