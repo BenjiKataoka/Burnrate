@@ -1,0 +1,83 @@
+import _run
+import io
+import tempfile
+import threading
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
+
+import fakes
+from burnrate import main, once, run
+from fetch import FetchError
+from metric import Metric
+from store import Store
+
+USED = Metric("Used", "GB", "max", "it stops")
+
+
+def test_once_prints_values_and_saves_nothing():
+    reg = {"svc": fakes.service("Svc", {"svc.used": USED}, lambda env, s: {"svc.used": 3.5})}
+    cfg = fakes.config(reg, {"svc.used": 10})
+    out = io.StringIO()
+    with redirect_stdout(out):
+        assert once(cfg, reg) == 0
+    assert "svc.used" in out.getvalue() and "3.5" in out.getvalue()
+    assert not Path(cfg.db_path).exists()
+
+
+def test_once_exits_1_when_a_collector_fails():
+    def boom(env: dict, s: dict) -> dict:
+        raise FetchError("HTTP 401", 401)
+    reg = {"svc": fakes.service("Svc", {"svc.used": USED}, boom)}
+    out = io.StringIO()
+    with redirect_stdout(out):
+        assert once(fakes.config(reg, {"svc.used": 10}), reg) == 1
+    assert "FAILED" in out.getvalue() and "HTTP 401" in out.getvalue()
+
+
+def test_main_exits_2_on_a_config_error():
+    err = io.StringIO()
+    with redirect_stderr(err):
+        assert main(["--once", "--config", "/nonexistent/config.toml"]) == 2
+    assert "not found" in err.getvalue()
+
+
+def test_run_polls_then_stops_cleanly():
+    reg = {"svc": fakes.service("Svc", {"svc.used": USED}, lambda env, s: {"svc.used": 1.0})}
+    cfg = fakes.config(reg, {"svc.used": 10})
+    stop = threading.Event()
+    threading.Timer(0.5, stop.set).start()
+    assert run(cfg, reg, stop) == 0
+    assert "svc.used" in Store(cfg.db_path).latest()
+
+
+def test_a_crashing_cycle_does_not_kill_the_loop():
+    import burnrate
+
+    def crash(*args: object) -> None:
+        raise RuntimeError("disk full")
+    reg = {"svc": fakes.service("Svc", {"svc.used": USED}, lambda env, s: {"svc.used": 1.0})}
+    cfg = fakes.config(reg, {"svc.used": 10})
+    original, burnrate.poll_once = burnrate.poll_once, crash
+    stop = threading.Event()
+    threading.Timer(0.5, stop.set).start()
+    err = io.StringIO()
+    try:
+        with redirect_stderr(err):
+            assert run(cfg, reg, stop) == 0
+    finally:
+        burnrate.poll_once = original
+    assert "poll cycle failed" in err.getvalue() and "disk full" in err.getvalue()
+
+
+def test_unopenable_database_exits_1():
+    reg = {"svc": fakes.service("Svc", {"svc.used": USED}, lambda env, s: {"svc.used": 1.0})}
+    cfg = fakes.config(reg, {"svc.used": 10})
+    cfg.db_path = str(Path(tempfile.mkdtemp()) / "missing-dir" / "t.db")
+    err = io.StringIO()
+    with redirect_stderr(err):
+        assert run(cfg, reg, threading.Event()) == 1
+    assert "cannot open the database" in err.getvalue()
+
+
+if __name__ == "__main__":
+    _run.run(globals())
