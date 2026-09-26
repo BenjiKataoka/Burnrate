@@ -1,0 +1,36 @@
+# Secrets and local state
+.env
+config.toml
+*.db
+*.db-wal
+*.db-shm
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node and Tauri (the app, later)
+node_modules/
+dist/
+app/src-tauri/target/
+
+# OS and editors
+.DS_Store
+.vscode/
+.idea/
+
+# Private planning, memory and AI-assistant files. Named explicitly rather than *.md,
+# which would also hide every README from a public repo.
+CLAUDE.md
+**/CLAUDE.md
+PLAN.md
+PRODUCT.md
+memory/
+.agents/
+.claude/
+docs/superpowers/
+.superpowers/
+.playwright-mcp/
+graphify-out/
