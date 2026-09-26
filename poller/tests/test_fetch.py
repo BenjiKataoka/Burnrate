@@ -8,10 +8,33 @@ import fetch
 from fetch import FetchError, get_json, post_json
 
 
+received: list[str] = []
+
+
+class Catcher(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        received.append(self.headers.get("Authorization", ""))
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"{}")
+
+    def log_message(self, *args: object) -> None:
+        pass
+
+
+catcher = ThreadingHTTPServer(("127.0.0.1", 0), Catcher)
+threading.Thread(target=catcher.serve_forever, daemon=True).start()
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         routes = {"/ok": (200, json.dumps({"a": 1}).encode()), "/text": (200, b"hello"),
                   "/big": (200, b"x" * (fetch.MAX_BYTES + 10))}
+        if self.path == "/redirect":
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{catcher.server_address[1]}/stolen")
+            self.end_headers()
+            return
         if self.path == "/slow":
             time.sleep(1.5)
             code, body = 200, b"{}"
@@ -79,6 +102,12 @@ def test_unreachable_host():
 
 def test_post_with_empty_reply():
     assert post_json(f"{BASE}/hook", {"content": "x"}) is None
+
+
+def test_redirects_are_refused_and_never_forward_the_token():
+    e = expect_error(lambda: get_json(f"{BASE}/redirect", {"Authorization": "Bearer SECRET-REDIRECT"}))
+    assert e.status == 302 and str(e) == "HTTP 302"
+    assert received == []
 
 
 if __name__ == "__main__":

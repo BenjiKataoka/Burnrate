@@ -9,6 +9,16 @@ TIMEOUT_S: float = 20
 MAX_BYTES = 5_000_000
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects: urllib would resend the Authorization header to the new host."""
+    def redirect_request(self, req: urllib.request.Request, fp: object, code: int, msg: str,
+                         headers: object, newurl: str) -> None:
+        return None  # urllib then raises HTTPError for the 3xx, which _send turns into FetchError
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 class FetchError(Exception):
     def __init__(self, message: str, status: int | None = None) -> None:
         super().__init__(message)
@@ -30,7 +40,7 @@ def post_json(url: str, body: dict) -> Any:
 
 def _send(req: urllib.request.Request) -> Any:
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
+        with _OPENER.open(req, timeout=TIMEOUT_S) as r:
             body = r.read(MAX_BYTES + 1)
     except urllib.error.HTTPError as e:
         # Never the URL: it can hold a project id or, for Discord, the webhook secret.
