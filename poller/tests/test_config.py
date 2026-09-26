@@ -115,5 +115,28 @@ def test_read_env_file():
     assert read_env_file(p.parent / "missing") == {}
 
 
+def test_limits_must_be_a_table():
+    assert "[fake.limits] must be a table of numbers" in error_of(GOOD.replace("[fake.limits]\nused = 10", "limits = 5"))
+
+
+def test_service_must_be_a_table():
+    text = """fake = 5
+
+[poller]
+listen = "127.0.0.1:8787"
+"""
+    assert "[fake] must be a table" in error_of(text)
+
+
+def test_non_numeric_settings_are_refused_cleanly():
+    for line in ('interval_minutes = "soon"', 'warn_at = "high"', "crit_clear = true", "fail_alert_after = 0"):
+        key = line.split(" ")[0]
+        assert f"[poller] {key} must be a number" in error_of(GOOD.replace("[poller]", f"[poller]\n{line}")), line
+
+
+def test_port_range():
+    assert "port must be 1 to 65535" in error_of(GOOD.replace("8787", "99999"))
+
+
 if __name__ == "__main__":
     _run.run(globals())

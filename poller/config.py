@@ -28,6 +28,14 @@ WEBHOOK_PREFIXES = ("https://discord.com/api/webhooks/", "https://discordapp.com
 EVERY_INTERFACE = ("", "0.0.0.0", "::", "[::]")
 
 
+def _setting(poller: dict, key: str, default: float, low: float, high: float) -> float:
+    """Validate a numeric setting, raising ConfigError on bad types or out-of-range values."""
+    value = poller.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= high:
+        raise ConfigError(f"[poller] {key} must be a number from {low:g} to {high:g}")
+    return float(value)
+
+
 def read_env_file(path: Path) -> dict[str, str]:
     """KEY=value lines. systemd's EnvironmentFile reads the same file on the server."""
     out: dict[str, str] = {}
@@ -52,6 +60,8 @@ def load_config(path: Path, registry: dict[str, ModuleType], env: dict[str, str]
         raise ConfigError(f"{path}: {e}") from None
 
     poller = raw.pop("poller", {})
+    if not isinstance(poller, dict):
+        raise ConfigError("[poller] must be a table")
     unknown = [name for name in raw if name not in registry]
     if unknown:
         raise ConfigError(f"unknown service in config: {', '.join(unknown)} "
@@ -61,6 +71,8 @@ def load_config(path: Path, registry: dict[str, ModuleType], env: dict[str, str]
 
     limits: dict[str, float] = {}
     for name, section in raw.items():
+        if not isinstance(section, dict):
+            raise ConfigError(f"[{name}] must be a table")
         mod = registry[name]
         for key in mod.REQUIRED:
             if not section.get(key):
@@ -69,6 +81,8 @@ def load_config(path: Path, registry: dict[str, ModuleType], env: dict[str, str]
             if not env.get(var):
                 raise ConfigError(f"{var} is not set (needed by {name})")
         given = section.get("limits", {})
+        if not isinstance(given, dict):
+            raise ConfigError(f"[{name}.limits] must be a table of numbers")
         for metric in mod.METRICS:
             short = metric.split(".", 1)[1]
             value = given.get(short)
@@ -79,6 +93,9 @@ def load_config(path: Path, registry: dict[str, ModuleType], env: dict[str, str]
     host, sep, port = str(poller.get("listen", "127.0.0.1:8787")).rpartition(":")
     if not sep or not port.isdigit():
         raise ConfigError("[poller] listen must look like 127.0.0.1:8787")
+    port_int = int(port)
+    if not 1 <= port_int <= 65535:
+        raise ConfigError("[poller] listen port must be 1 to 65535")
     if host in EVERY_INTERFACE:
         raise ConfigError("listening on every interface is refused; use 127.0.0.1 or the "
                           "machine's Tailscale IP")
@@ -90,15 +107,16 @@ def load_config(path: Path, registry: dict[str, ModuleType], env: dict[str, str]
         if not env.get("DISCORD_WEBHOOK_URL", "").startswith(WEBHOOK_PREFIXES):
             raise ConfigError("DISCORD_WEBHOOK_URL must be a https://discord.com/api/webhooks/ URL")
 
-    interval = int(poller.get("interval_minutes", 15))
-    if not 5 <= interval <= 60:
-        raise ConfigError("[poller] interval_minutes must be between 5 and 60")
-    t = Thresholds(float(poller.get("warn_at", 0.80)), float(poller.get("warn_clear", 0.75)),
-                   float(poller.get("crit_clear", 0.95)))
+    interval = int(_setting(poller, "interval_minutes", 15, 5, 60))
+    warn_at = _setting(poller, "warn_at", 0.80, 0, 1)
+    warn_clear = _setting(poller, "warn_clear", 0.75, 0, 1)
+    crit_clear = _setting(poller, "crit_clear", 0.95, 0, 1)
+    fail_alert_after = int(_setting(poller, "fail_alert_after", 4, 1, 100))
+    t = Thresholds(warn_at, warn_clear, crit_clear)
     if not 0 < t.warn_clear < t.warn_at < t.crit_clear < 1:
         raise ConfigError("thresholds must satisfy 0 < warn_clear < warn_at < crit_clear < 1")
 
     return Config(interval_s=interval * 60, db_path=str(poller.get("db_path", "burnrate.db")),
-                  host=host, port=int(port), thresholds=t,
-                  fail_alert_after=int(poller.get("fail_alert_after", 4)),
+                  host=host, port=port_int, thresholds=t,
+                  fail_alert_after=fail_alert_after,
                   services=raw, limits=limits, env=env)
