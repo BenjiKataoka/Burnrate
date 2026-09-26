@@ -19,3 +19,7 @@ project_id = "your-neon-project-id"
 compute_cu_hours = 100
 transfer_gb = 5
 storage_gb = 0.5
+
+[clerk]
+[clerk.limits]
+users = 50000
