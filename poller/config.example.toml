@@ -1,0 +1,21 @@
+# Burnrate configuration. Copy to config.toml (never committed) and fill in your ids.
+# A service is on when its section is here; delete a section to turn that service off.
+
+[poller]
+interval_minutes = 15
+db_path = "burnrate.db"
+# 127.0.0.1 keeps the API on this machine. On a server, use its Tailscale IP.
+# Listening on every interface (0.0.0.0) is refused on purpose.
+listen = "127.0.0.1:8787"
+warn_at = 0.80
+warn_clear = 0.75
+crit_clear = 0.95
+# Consecutive failed polls before a "collector failing" alert.
+fail_alert_after = 4
+
+[neon]
+project_id = "your-neon-project-id"
+[neon.limits]
+compute_cu_hours = 100
+transfer_gb = 5
+storage_gb = 0.5
