@@ -13,7 +13,7 @@ PATTERNS = {
     "Neon connection string": r"postgres(ql)?://[^\s:/]+:[^\s@]+@",
     "Neon password": r"npg_[A-Za-z0-9]{8,}",
     "Discord webhook": r"discord(app)?\.com/api/webhooks/\d+/[\w-]+",
-    "Secret assignment": r"(TOKEN|SECRET|KEY|PASSWORD)\s*=\s*['\"]?[A-Za-z0-9_\-]{16,}",
+    "Secret assignment": r"(?i)(TOKEN|SECRET|KEY|PASSWORD)\s*=\s*['\"]?[A-Za-z0-9_\-]{16,}",
     "Private key": r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
     "Oracle OCID": r"ocid1\.[a-z]+\.oc1\.[a-z0-9.-]*[a-z0-9]{20,}",
     "Tailscale IP": r"\b100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b",
