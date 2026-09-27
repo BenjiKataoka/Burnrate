@@ -1,0 +1,8 @@
+{
+  "deployments": [
+    {"uid": "dpl_example1", "created": 1790460000000, "state": "READY"},
+    {"uid": "dpl_example2", "created": 1790450000000, "state": "READY"},
+    {"uid": "dpl_example3", "created": 1790440000000, "state": "ERROR"}
+  ],
+  "pagination": {"count": 3, "next": null, "prev": null}
+}

@@ -23,3 +23,7 @@ storage_gb = 0.5
 [clerk]
 [clerk.limits]
 users = 50000
+
+[vercel]
+[vercel.limits]
+deploys_24h = 100
