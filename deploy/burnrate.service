@@ -1,0 +1,31 @@
+[Unit]
+Description=Burnrate poller
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+User=burnrate
+Group=burnrate
+WorkingDirectory=/opt/burnrate/poller
+EnvironmentFile=/opt/burnrate/.env
+ExecStart=/opt/burnrate/venv/bin/python burnrate.py --config /opt/burnrate/config.toml
+# At boot the Tailscale address may not exist yet; exiting and retrying is the simple fix.
+Restart=always
+RestartSec=10
+# Sandbox: the poller needs the network and its data directory, nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/burnrate/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target
