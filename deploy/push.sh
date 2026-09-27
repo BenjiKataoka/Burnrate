@@ -6,7 +6,8 @@
 #
 # push.sh rolls back automatically if the new release fails to start. To roll back by hand
 # (also re-syncing the previous release's own lock, since the venv is shared):
-#   sudo mv /opt/burnrate/poller /opt/burnrate/poller.bad && sudo mv /opt/burnrate/poller.prev /opt/burnrate/poller \
+#   sudo rm -rf /opt/burnrate/poller.bad \
+#     && sudo mv /opt/burnrate/poller /opt/burnrate/poller.bad && sudo mv /opt/burnrate/poller.prev /opt/burnrate/poller \
 #     && sudo env UV_CACHE_DIR=/opt/burnrate/.cache/uv uv pip sync --require-hashes \
 #          --python /opt/burnrate/venv/bin/python /opt/burnrate/poller/requirements.lock \
 #     && sudo systemctl restart burnrate
@@ -42,7 +43,7 @@ env UV_CACHE_DIR="$APP/.cache/uv" uv pip sync --require-hashes \
 echo "==> Checking config (deploy check, no network calls)"
 # burnrate.py reads /opt/burnrate/.env itself, so no secret ever appears on a command line.
 (cd poller.new && sudo -u burnrate "$APP/venv/bin/python" burnrate.py --check-config --config "$APP/config.toml" </dev/null) \
-  || { echo "Config check failed; the old release keeps running."; exit 1; }
+  || { echo "Config check failed; the old release is still in place, but the venv now has the new lock. Run the rollback sync from the header comment before restarting it."; exit 1; }
 
 echo "==> Checking every service before the swap"
 set +e
@@ -52,7 +53,7 @@ set -e
 case "$code" in
   0) ;;
   1) echo "A collector failed (see above). Deploying anyway; it is retried every poll." ;;
-  *) echo "Check failed ($code); the old release keeps running."; exit 1 ;;
+  *) echo "Check failed ($code); the old release is still in place, but the venv now has the new lock. Run the rollback sync from the header comment before restarting it."; exit 1 ;;
 esac
 
 echo "==> Swap and restart"
@@ -64,7 +65,7 @@ START=$(date +%s)
 systemctl restart burnrate
 
 started=0
-for i in $(seq 1 20); do
+for _ in $(seq 1 20); do
   sleep 1
   if systemctl is-active --quiet burnrate \
       && journalctl -u burnrate --since "@$START" --no-pager -q | grep -q "API on"; then
@@ -77,11 +78,13 @@ if [ "$started" = 1 ]; then
   echo "Burnrate $REV is running."
 else
   echo "Burnrate $REV did not start; rolling back."
+  rm -rf poller.bad
   mv poller poller.bad
   if [ -d poller.prev ]; then
     mv poller.prev poller
     env UV_CACHE_DIR="$APP/.cache/uv" uv pip sync --require-hashes \
-      --python "$APP/venv/bin/python" poller/requirements.lock </dev/null
+      --python "$APP/venv/bin/python" poller/requirements.lock </dev/null \
+      || echo "Warning: could not re-sync the previous lock; restarting anyway."
     systemctl restart burnrate
     echo "Rolled back. Logs: sudo journalctl -u burnrate -n 60"
   else

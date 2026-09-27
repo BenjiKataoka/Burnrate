@@ -11,10 +11,10 @@ TEMPLATES="$(cd "$HERE/.." && pwd)"   # .env.example and config.example.toml sit
 [ "$(id -u)" = 0 ] || { echo "Run with sudo."; exit 1; }
 
 echo "==> uv (installs the exact Python the lock was built for)"
-command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh </dev/null
+command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh
 
 echo "==> Tailscale (the API listens only on this private network)"
-command -v tailscale >/dev/null || curl -fsSL https://tailscale.com/install.sh | sh </dev/null
+command -v tailscale >/dev/null || curl -fsSL https://tailscale.com/install.sh | sh
 
 echo "==> Service user and directories"
 id burnrate >/dev/null 2>&1 || useradd --system --home-dir "$APP" --shell /usr/sbin/nologin burnrate
