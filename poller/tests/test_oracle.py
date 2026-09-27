@@ -1,4 +1,6 @@
 import _run
+import sys
+import types
 from datetime import datetime, timedelta, timezone
 
 from collectors import REGISTRY, oracle
@@ -52,6 +54,143 @@ def test_no_cpu_data_is_an_error():
         assert "no CpuUtilization data" in str(e)
         return
     raise AssertionError("expected ValueError")
+
+
+def test_empty_memory_is_an_error():
+    data = standard()
+    data["MemoryUtilization"] = []
+    try:
+        oracle.collect({}, SECTION, series=lambda q, s, e: [] if "[1h]" in q
+                       else data[q.split("[")[0]], now=NOW)
+    except ValueError as e:
+        assert "no MemoryUtilization data" in str(e)
+        return
+    raise AssertionError("expected ValueError")
+
+
+def test_returns_exactly_its_metrics():
+    data = standard()
+    out = oracle.collect({}, SECTION, series=lambda q, s, e: [0.0] if "[1h]" in q
+                         else data[q.split("[")[0]], now=NOW)
+    assert set(out) == set(oracle.METRICS)
+
+
+def test_month_start_on_day_one():
+    now = datetime(2026, 10, 1, 0, 5, tzinfo=timezone.utc)
+    data = standard()
+    calls: list = []
+    oracle.collect({}, SECTION, series=lambda q, s, e: (calls.append((q, s, e)) or
+                   ([0.0] if "[1h]" in q else data[q.split("[")[0]])), now=now)
+    month = [c for c in calls if "[1h]" in c[0]]
+    assert month[0][1] == datetime(2026, 10, 1, tzinfo=timezone.utc)
+
+
+def test_bad_instance_id_is_refused():
+    section = dict(SECTION, instance_id="not-an-ocid")
+    try:
+        oracle.collect({}, section, series=lambda q, s, e: [1.0], now=NOW)
+    except ValueError as e:
+        assert "instance_id" in str(e)
+        return
+    raise AssertionError("expected ValueError")
+
+
+def test_network_gbps_is_required():
+    missing = {k: v for k, v in SECTION.items() if k != "network_gbps"}
+    zero = dict(SECTION, network_gbps=0)
+    for bad in (missing, zero):
+        try:
+            oracle.collect({}, bad, series=lambda q, s, e: [1.0], now=NOW)
+        except ValueError as e:
+            assert "network_gbps" in str(e)
+            continue
+        raise AssertionError("expected ValueError")
+
+
+def test_sdk_path_uses_matching_resolution_and_one_client():
+    calls = {"clients": [], "details": []}
+
+    class FakeSigner:
+        region = "us-ashburn-1"
+
+    class FakeServiceError(Exception):
+        def __init__(self, status, code, headers, message):
+            super().__init__(message)
+            self.status = status
+            self.code = code
+            self.message = message
+
+    class FakeDetails:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class FakeNoneRetryStrategy:
+        pass
+
+    class FakeMonitoringClient:
+        def __init__(self, config=None, signer=None, timeout=None, retry_strategy=None):
+            calls["clients"].append({"config": config, "signer": signer, "timeout": timeout,
+                                     "retry_strategy": retry_strategy})
+
+        def summarize_metrics_data(self, compartment_id, details):
+            calls["details"].append(details)
+            point = types.SimpleNamespace(value=1.0)
+            item = types.SimpleNamespace(aggregated_datapoints=[point])
+            return types.SimpleNamespace(data=[item])
+
+    fake_oci = types.SimpleNamespace(
+        auth=types.SimpleNamespace(signers=types.SimpleNamespace(
+            InstancePrincipalsSecurityTokenSigner=FakeSigner)),
+        monitoring=types.SimpleNamespace(
+            MonitoringClient=FakeMonitoringClient,
+            models=types.SimpleNamespace(SummarizeMetricsDataDetails=FakeDetails)),
+        retry=types.SimpleNamespace(NoneRetryStrategy=FakeNoneRetryStrategy),
+        config=types.SimpleNamespace(from_file=lambda: {}),
+        exceptions=types.SimpleNamespace(ServiceError=FakeServiceError),
+    )
+
+    original = sys.modules.get("oci")
+    oracle._clients.clear()
+    sys.modules["oci"] = fake_oci
+    try:
+        oracle.collect({}, SECTION, now=NOW)
+        oracle.collect({}, SECTION, now=NOW)
+
+        assert len(calls["clients"]) == 1
+        built = calls["clients"][0]
+        assert isinstance(built["retry_strategy"], FakeNoneRetryStrategy)
+        assert built["timeout"] == (10, 20)
+        assert len(calls["details"]) > 0
+        for details in calls["details"]:
+            interval = details.query[details.query.index("[") + 1:details.query.index("]")]
+            assert details.resolution == interval
+
+        client = oracle._clients["instance_principal"]
+
+        def raise_service_error(compartment_id, details):
+            raise fake_oci.exceptions.ServiceError(404, "NotAuthorizedOrNotFound", {},
+                                                    "authorizationFailed")
+
+        client.summarize_metrics_data = raise_service_error
+        try:
+            oracle.collect({}, SECTION, now=NOW)
+        except RuntimeError as e:
+            assert str(e).startswith("OCI 404 NotAuthorizedOrNotFound:")
+        else:
+            raise AssertionError("expected RuntimeError")
+
+        try:
+            oracle.collect({}, dict(SECTION, auth="instance_principle"), now=NOW)
+        except ValueError as e:
+            assert "auth" in str(e)
+        else:
+            raise AssertionError("expected ValueError")
+    finally:
+        if original is not None:
+            sys.modules["oci"] = original
+        else:
+            sys.modules.pop("oci", None)
+        oracle._clients.clear()
 
 
 if __name__ == "__main__":

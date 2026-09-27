@@ -5,6 +5,7 @@ all stay under 20% for 7 days, so the VM is safe while the busiest of the three 
 the floor. That busiest value is the idle guard, the only Oracle metric that alerts.
 """
 import math
+import re
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
@@ -12,9 +13,11 @@ from metric import Metric
 
 SERVICE = "Oracle"
 ENV = ()
-REQUIRED = ("compartment_id", "instance_id")
+REQUIRED = ("compartment_id", "instance_id", "network_gbps")
 STEP_S = 300  # 5-minute data: 1-minute data is not guaranteed across a 7-day window
+INSTANCE_ID_RE = re.compile(r"ocid1\.instance\.[a-z0-9._-]+")
 Series = Callable[[str, datetime, datetime], list[float]]
+_clients: dict[str, object] = {}  # one MonitoringClient per auth mode, built on first use
 
 METRICS = {
     "oracle.idle_guard": Metric("Idle guard", "%", "min", "Oracle can reclaim the VM", "rolling"),
@@ -34,6 +37,15 @@ def _nonempty(name: str, values: list[float]) -> list[float]:
 
 def collect(env: dict[str, str], section: dict, series: Series | None = None,
             now: datetime | None = None) -> dict[str, float]:
+    if not INSTANCE_ID_RE.fullmatch(section["instance_id"]):
+        raise ValueError("[oracle] instance_id does not look like an instance OCID")
+    try:
+        network_gbps = float(section["network_gbps"])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("[oracle] network_gbps must be a positive number") from None
+    if network_gbps <= 0:
+        raise ValueError("[oracle] network_gbps must be a positive number")
+
     series = series or _sdk_series(section)
     now = now or datetime.now(timezone.utc)
     week = now - timedelta(days=7)
@@ -45,7 +57,7 @@ def collect(env: dict[str, str], section: dict, series: Series | None = None,
     mem = _nonempty("MemoryUtilization", series(f"MemoryUtilization[5m]{rid}.mean()", week, now))
     # ponytail: network % = average rate over the link speed; Oracle does not publish its
     # exact formula, so this is checked against the console's graphs in Task 13.
-    link_bits = float(section.get("network_gbps", 1)) * 1e9
+    link_bits = network_gbps * 1e9
     net = 0.0
     for name in ("NetworksBytesIn", "NetworksBytesOut"):
         per_step = _nonempty(name, series(f"{name}[5m]{rid}.sum()", week, now))
@@ -65,17 +77,35 @@ def collect(env: dict[str, str], section: dict, series: Series | None = None,
 def _sdk_series(section: dict) -> Series:
     import oci  # only needed on a machine that polls Oracle; tests never import it
 
-    if section.get("auth", "instance_principal") == "instance_principal":
-        signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
-        client = oci.monitoring.MonitoringClient(config={"region": signer.region}, signer=signer,
-                                                 timeout=(10, 20))
-    else:
-        client = oci.monitoring.MonitoringClient(oci.config.from_file(), timeout=(10, 20))
+    auth = section.get("auth", "instance_principal")
+    if auth not in ("instance_principal", "config_file"):
+        raise ValueError('[oracle] auth must be "instance_principal" or "config_file"')
+
+    client = _clients.get(auth)
+    if client is None:
+        # ponytail: only this first build pays the SDK's own IMDS-certificate and federation
+        # retries; every later poll reuses the cached client and the signer refreshes its own
+        # token, so a failed query fails fast instead of stalling the sequential poll loop.
+        if auth == "instance_principal":
+            signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
+            client = oci.monitoring.MonitoringClient(
+                config={"region": signer.region}, signer=signer, timeout=(10, 20),
+                retry_strategy=oci.retry.NoneRetryStrategy())
+        else:
+            client = oci.monitoring.MonitoringClient(
+                oci.config.from_file(), timeout=(10, 20),
+                retry_strategy=oci.retry.NoneRetryStrategy())
+        _clients[auth] = client
 
     def series(query: str, start: datetime, end: datetime) -> list[float]:
+        interval = query[query.index("[") + 1:query.index("]")]
         details = oci.monitoring.models.SummarizeMetricsDataDetails(
-            namespace="oci_computeagent", query=query, start_time=start, end_time=end)
-        data = client.summarize_metrics_data(section["compartment_id"], details).data
+            namespace="oci_computeagent", query=query, start_time=start, end_time=end,
+            resolution=interval)
+        try:
+            data = client.summarize_metrics_data(section["compartment_id"], details).data
+        except oci.exceptions.ServiceError as e:
+            raise RuntimeError(f"OCI {e.status} {e.code}: {e.message}") from None
         return [p.value for item in data for p in item.aggregated_datapoints]
 
     return series

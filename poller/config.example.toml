@@ -34,7 +34,7 @@ deploys_24h = 100
 auth = "instance_principal"
 compartment_id = "ocid1.tenancy.oc1..your-tenancy-or-compartment"
 instance_id = "ocid1.instance.oc1.your-region.your-instance"
-# Link speed for the network percentage: A1 gets 1 Gbps per OCPU.
+# Link speed for the network percentage. A1 gets 1 Gbps per OCPU: set this to your OCPU count.
 network_gbps = 1
 [oracle.limits]
 idle_guard = 20
