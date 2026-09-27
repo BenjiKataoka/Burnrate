@@ -35,7 +35,12 @@ def metric_message(kind: str, service: str, m: Metric, value: float, limit: floa
             head = f"{who} down to {num(value)}% (floor {num(limit)}%)."
         else:
             head = f"{who} at {pct}% ({_amount(m, value, limit)})."
-        eta = f" {edge.capitalize()} in about {round(days)} days." if days is not None and days >= 1 else ""
+        if days is not None and days >= 1:
+            n = round(days)
+            day_word = "day" if n == 1 else "days"
+            eta = f" {edge.capitalize()} in about {n} {day_word}."
+        else:
+            eta = ""
         return _embed(f"Warning: {who}", f"{head}{eta} At the {edge}, {m.at_limit}.", AMBER)
     if kind == "crit":
         if m.dir == "min":
@@ -69,7 +74,7 @@ def discord_sender(url: str, post: Callable[[str, dict], object] = post_json) ->
         try:
             post(url, msg)
             return True
-        except FetchError as e:
-            log.warning("Discord send failed: %s", e)  # FetchError text never holds the URL
+        except Exception as e:  # a failed send must never break the poll loop
+            log.warning("Discord send failed: %s", e if isinstance(e, FetchError) else type(e).__name__)
             return False
     return send

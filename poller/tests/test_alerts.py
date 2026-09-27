@@ -79,5 +79,25 @@ def test_sender_reports_success_and_failure():
     assert discord_sender("https://example.invalid/hook", post=down)(connected()) is False
 
 
+def test_warning_says_one_day():
+    e = embed(metric_message("warn", "Neon", STORAGE, 0.43, 0.5, 86, 1.2))
+    assert "Limit in about 1 day." in e["description"]
+    assert "1 days" not in e["description"]
+
+
+def test_sender_never_raises():
+    def bad_post(url: str, body: dict) -> None:
+        raise TypeError("not serializable")
+    assert discord_sender("https://example.invalid/hook", post=bad_post)(connected()) is False
+
+
+def test_back_under_min_and_recovered_text():
+    e = embed(metric_message("back_under", "Oracle", GUARD, 25, 20, 80, None))
+    assert e["description"] == "Oracle idle guard is back above its floor (25%, floor 20%)."
+    e = embed(collector_recovered("Neon"))
+    assert e["title"] == "Collector recovered: Neon"
+    assert e["description"] == "The Neon collector is working again."
+
+
 if __name__ == "__main__":
     _run.run(globals())
