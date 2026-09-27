@@ -37,8 +37,12 @@ chown -R root:root poller.new
 chmod -R a+rX poller.new
 
 echo "==> Dependencies (exact, hashed lock)"
-env UV_CACHE_DIR="$APP/.cache/uv" uv pip sync --require-hashes \
-  --python "$APP/venv/bin/python" poller.new/requirements.lock </dev/null
+if cmp -s poller.new/requirements.lock poller/requirements.lock; then
+  echo "Dependencies unchanged."
+else
+  env UV_CACHE_DIR="$APP/.cache/uv" uv pip sync --require-hashes \
+    --python "$APP/venv/bin/python" poller.new/requirements.lock </dev/null
+fi
 
 echo "==> Checking config (deploy check, no network calls)"
 # burnrate.py reads /opt/burnrate/.env itself, so no secret ever appears on a command line.
@@ -56,6 +60,20 @@ case "$code" in
   *) echo "Check failed ($code); the old release is still in place, but the venv now has the new lock. Run the rollback sync from the header comment before restarting it."; exit 1 ;;
 esac
 
+# Since item 1, polling starts even when the API cannot bind (Tailscale down), so "API on"
+# can legitimately be missing; either line proves the process is up and polling.
+wait_for_start() {
+  since="$1"
+  for _ in $(seq 1 20); do
+    sleep 1
+    if systemctl is-active --quiet burnrate \
+        && journalctl -u burnrate --since "@$since" --no-pager -q | grep -qE "API on|API not listening"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 echo "==> Swap and restart"
 rm -rf poller.prev
 [ -d poller ] && mv poller poller.prev
@@ -64,17 +82,7 @@ systemctl daemon-reload
 START=$(date +%s)
 systemctl restart burnrate
 
-started=0
-for _ in $(seq 1 20); do
-  sleep 1
-  if systemctl is-active --quiet burnrate \
-      && journalctl -u burnrate --since "@$START" --no-pager -q | grep -q "API on"; then
-    started=1
-    break
-  fi
-done
-
-if [ "$started" = 1 ]; then
+if wait_for_start "$START"; then
   echo "Burnrate $REV is running."
 else
   echo "Burnrate $REV did not start; rolling back."
@@ -85,8 +93,13 @@ else
     env UV_CACHE_DIR="$APP/.cache/uv" uv pip sync --require-hashes \
       --python "$APP/venv/bin/python" poller/requirements.lock </dev/null \
       || echo "Warning: could not re-sync the previous lock; restarting anyway."
+    ROLLBACK_START=$(date +%s)
     systemctl restart burnrate
-    echo "Rolled back. Logs: sudo journalctl -u burnrate -n 60"
+    if wait_for_start "$ROLLBACK_START"; then
+      echo "Rolled back to the previous release."
+    else
+      echo "Rollback did not start either; see sudo journalctl -u burnrate -n 60."
+    fi
   else
     echo "No previous release to roll back to. Logs: sudo journalctl -u burnrate -n 60"
   fi

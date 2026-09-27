@@ -1,4 +1,7 @@
 import _run
+import io
+import logging
+
 from alerts import (AMBER, GREEN, RED, collector_failing, collector_recovered, connected,
                     discord_sender, metric_message, num)
 from fetch import FetchError
@@ -8,6 +11,11 @@ STORAGE = Metric("Storage", "GB", "max", "writes fail")
 COMPUTE = Metric("Compute", "CU-h", "max", "the database is suspended until next month", "monthly")
 GUARD = Metric("Idle guard", "%", "min", "Oracle can reclaim the VM", "rolling")
 USERS = Metric("Users", "", "max", "an upgrade is required")
+
+# Captures "burnrate" logger output instead of letting the two expected "Discord send failed"
+# warnings below fall through to logging's last-resort handler and print to stderr.
+LOG = io.StringIO()
+logging.getLogger("burnrate").addHandler(logging.StreamHandler(LOG))
 
 
 def embed(msg: dict) -> dict:
@@ -93,6 +101,7 @@ def test_sender_never_raises():
 
 def test_back_under_min_and_recovered_text():
     e = embed(metric_message("back_under", "Oracle", GUARD, 25, 20, 80, None))
+    assert e["title"] == "Back above the floor: Oracle idle guard"
     assert e["description"] == "Oracle idle guard is back above its floor (25%, floor 20%)."
     e = embed(collector_recovered("Neon"))
     assert e["title"] == "Collector recovered: Neon"

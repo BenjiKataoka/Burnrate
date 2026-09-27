@@ -53,26 +53,47 @@ def run(cfg: Config, registry: dict, stop: threading.Event | None = None,
     except sqlite3.Error as e:
         print(f"burnrate: cannot open the database at {cfg.db_path}: {e}", file=sys.stderr)
         return 1
+
+    server = None
+    warned = False  # log "API not listening" once per failure streak, not every retry
+
+    def bind() -> None:
+        nonlocal server, warned
+        try:
+            server = api.make_server(cfg, store, registry, cfg.env.get("BURNRATE_TOKEN", ""))
+        except OSError as e:
+            # Usually Tailscale is not up yet at boot, or tailscaled is restarting; polling
+            # does not depend on this, so keep going and retry the bind every cycle.
+            if not warned:
+                log.warning("API not listening on %s:%d yet (%s); polling and alerts continue",
+                           cfg.host, cfg.port, e)
+                warned = True
+            return
+        warned = False
+        threading.Thread(target=server.serve_forever, name="api", daemon=True).start()
+        if on_ready:
+            on_ready(server.server_address[1])
+        log.info("API on %s:%d", cfg.host, server.server_address[1])
+
     try:
-        server = api.make_server(cfg, store, registry, cfg.env.get("BURNRATE_TOKEN", ""))
-    except OSError as e:
-        # Usually Tailscale is not up yet at boot; systemd restarts us until it is.
-        print(f"burnrate: cannot listen on {cfg.host}:{cfg.port}: {e}", file=sys.stderr)
+        bind()
+    except ValueError as e:  # a short token is a config error, not a transient one: fatal
+        print(f"burnrate: {e}", file=sys.stderr)
         return 1
-    threading.Thread(target=server.serve_forever, name="api", daemon=True).start()
-    if on_ready:
-        on_ready(server.server_address[1])
-    log.info("polling %s every %d min; API on %s:%d", ", ".join(cfg.services),
-             cfg.interval_s // 60, cfg.host, server.server_address[1])
+
+    log.info("polling %s every %d min", ", ".join(cfg.services), cfg.interval_s // 60)
     while not stop.is_set():
         started = time.monotonic()
+        if server is None:
+            bind()
         try:
             poll_once(cfg, store, registry, int(time.time()), send)
         except Exception:  # a bad cycle (disk full, locked database) must not end the loop
             log.exception("poll cycle failed; trying again next interval")
         stop.wait(max(1.0, cfg.interval_s - (time.monotonic() - started)))
-    server.shutdown()
-    server.server_close()
+    if server is not None:
+        server.shutdown()
+        server.server_close()
     log.info("stopped")
     return 0
 

@@ -50,8 +50,8 @@ def metric_message(kind: str, service: str, m: Metric, value: float, limit: floa
         return _embed(f"Limit reached: {who}", text, RED)
     if m.dir == "min":
         text = f"{who} is back above its floor ({num(value)}%, floor {num(limit)}%)."
-    else:
-        text = f"{who} is back under its limit ({_amount(m, value, limit)})."
+        return _embed(f"Back above the floor: {who}", text, GREEN)
+    text = f"{who} is back under its limit ({_amount(m, value, limit)})."
     return _embed(f"Back under the limit: {who}", text, GREEN)
 
 

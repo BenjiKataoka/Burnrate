@@ -8,7 +8,8 @@ from metric import Metric
 SERVICE = "Neon"
 ENV = ("NEON_API_KEY",)
 REQUIRED = ("project_id",)
-GB = 1e9  # decimal GB; confirmed against the Neon console in Task 6
+GB = 1e9  # decimal GB; not verified against the Neon console, so if Neon means GiB (2**30)
+          # instead this reads slightly high, which warns early rather than late
 
 METRICS = {
     "neon.compute_cu_hours": Metric("Compute", "CU-h", "max",

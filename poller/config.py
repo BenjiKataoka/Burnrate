@@ -39,7 +39,8 @@ def _setting(poller: dict, key: str, default: float, low: float, high: float) ->
 
 
 def read_env_file(path: Path) -> dict[str, str]:
-    """KEY=value lines. systemd's EnvironmentFile reads the same file on the server."""
+    """KEY=value lines. The poller reads this file itself; the systemd unit has no
+    EnvironmentFile, so this is the only parser and the only place secrets are read from."""
     out: dict[str, str] = {}
     if not path.exists():
         return out

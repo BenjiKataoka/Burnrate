@@ -71,8 +71,8 @@ def days_to_limit(direction: str, value: float, limit: float, slope: float | Non
 
 
 def next_month_start(now: int) -> int:
-    # ponytail: calendar month in UTC; Neon's billing period may start on another day
-    # (checked against consumption_period_end in Task 6), change here if it does.
+    # ponytail: calendar month in UTC; Neon's billing period may start on another day and
+    # this has not been checked against consumption_period_end, change here if it does.
     d = datetime.fromtimestamp(now, timezone.utc)
     y, m = (d.year + 1, 1) if d.month == 12 else (d.year, d.month + 1)
     return int(datetime(y, m, 1, tzinfo=timezone.utc).timestamp())

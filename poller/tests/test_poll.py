@@ -26,7 +26,7 @@ def test_one_failing_collector_does_not_stop_the_others():
     cfg = fakes.config(reg, {"good.used": 10, "bad.used": 10})
     st = fakes.store()
     poll_once(cfg, st, reg, 1000, lambda m: True)
-    assert st.latest() == {"good.used": (1000, 3.0)}
+    assert st.latest(cfg.limits) == {"good.used": (1000, 3.0)}
     runs = st.runs()
     assert runs["good"]["fails"] == 0 and runs["good"]["last_ok"] == 1000
     assert runs["bad"] == {"last_ok": None, "last_err": "HTTP 401", "fails": 1}
@@ -49,7 +49,7 @@ def test_bad_shape_is_a_failure_not_a_crash():
         assert isinstance(result, str), name
         st = fakes.store()
         poll_once(cfg, st, reg, 5, lambda m: True)
-        assert st.latest() == {} and st.runs()["svc"]["fails"] == 1, name
+        assert st.latest(cfg.limits) == {} and st.runs()["svc"]["fails"] == 1, name
 
 
 def test_describe_error_redacts_secrets_and_truncates():

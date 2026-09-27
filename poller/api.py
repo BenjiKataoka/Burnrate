@@ -17,7 +17,7 @@ MAX_DAYS = 90
 
 
 def build_status(cfg: Config, store: Store, registry: dict, now: int) -> dict:
-    latest, runs = store.latest(), store.runs()
+    latest, runs = store.latest(cfg.limits), store.runs()
     rows = []
     for name in cfg.services:
         mod = registry[name]

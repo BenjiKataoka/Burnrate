@@ -14,7 +14,9 @@ def test_latest_is_the_newest_value_per_metric():
     s = fresh()
     s.add_snapshots(100, {"a": 1.0, "b": 5.0})
     s.add_snapshots(200, {"a": 2.0})
-    assert s.latest() == {"a": (200, 2.0), "b": (100, 5.0)}
+    assert s.latest(["a", "b"]) == {"a": (200, 2.0), "b": (100, 5.0)}
+    assert s.latest(["a"]) == {"a": (200, 2.0)}
+    assert s.latest(["missing"]) == {}
 
 
 def test_history_is_filtered_and_ordered():

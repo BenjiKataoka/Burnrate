@@ -73,8 +73,9 @@ The server is on the tailnet now, so this is the point to restrict who can reach
    The default policy ships with an allow-all rule (`"src": ["*"], "dst": ["*:*"]`); that
    rule must be removed or narrowed, or this rule restricts nothing. Keep any other rules
    you rely on, minus allow-all.
-3. Check it: `tailscale ping <server>` from your Mac should get an answer; a phone on the
-   same tailnet should get no answer on port 8787.
+3. Check it: `curl -s -o /dev/null -w '%{http_code}\n' http://<server tailscale ip>:8787/api/status`
+   from your Mac should print `401` (reachable, token required); the same command from any
+   other device on the tailnet should time out.
 
 ## 6. Ship (every deploy, from your laptop)
 

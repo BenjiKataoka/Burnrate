@@ -1,7 +1,7 @@
 """SQLite storage. One short connection per call, so the poll loop and the API threads
 never share a connection; WAL lets readers run while the loop writes."""
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 
 SCHEMA = """
@@ -38,11 +38,17 @@ class Store:
             c.executemany("INSERT OR REPLACE INTO snapshots VALUES (?, ?, ?)",
                           [(ts, metric, value) for metric, value in values.items()])
 
-    def latest(self) -> dict[str, tuple[int, float]]:
+    def latest(self, metrics: Iterable[str]) -> dict[str, tuple[int, float]]:
+        """One indexed lookup per metric (metric, ts) is the primary key, so this hits the
+        index; the old correlated subquery scanned the whole table once per row."""
+        out: dict[str, tuple[int, float]] = {}
         with self._db() as c:
-            rows = c.execute("SELECT metric, ts, value FROM snapshots s WHERE ts = "
-                             "(SELECT MAX(ts) FROM snapshots WHERE metric = s.metric)").fetchall()
-        return {metric: (ts, value) for metric, ts, value in rows}
+            for metric in metrics:
+                row = c.execute("SELECT ts, value FROM snapshots WHERE metric = ? "
+                                "ORDER BY ts DESC LIMIT 1", (metric,)).fetchone()
+                if row is not None:
+                    out[metric] = tuple(row)
+        return out
 
     def history(self, metric: str, since: int) -> list[tuple[int, float]]:
         with self._db() as c:

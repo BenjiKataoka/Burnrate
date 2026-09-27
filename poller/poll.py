@@ -48,19 +48,27 @@ def collect_all(cfg: Config, registry: dict) -> dict[str, dict[str, float] | str
     return out
 
 
+def _sent(send: Send, msg: alerts.Message) -> bool:
+    """Send, and log the title so the operator can see what went out without opening Discord."""
+    ok = send(msg)
+    if ok:
+        log.info("alert sent: %s", msg["embeds"][0]["title"])
+    return ok
+
+
 def evaluate(cfg: Config, store: Store, registry: dict, send: Send, now: int) -> None:
     """Alert on level changes only. A level is saved after Discord accepts the message, so
     a failed send is retried next poll and a restart never repeats one."""
-    latest, runs = store.latest(), store.runs()
+    latest, runs = store.latest(cfg.limits), store.runs()
     for name in cfg.services:
         mod = registry[name]
         run = runs.get(name, {"fails": 0, "last_ok": None, "last_err": None})
         key = f"collector:{name}"
         if run["fails"] >= cfg.fail_alert_after and store.level(key) != "failing":
-            if send(alerts.collector_failing(mod.SERVICE, run["last_err"] or "unknown error")):
+            if _sent(send, alerts.collector_failing(mod.SERVICE, run["last_err"] or "unknown error")):
                 store.set_level(key, "failing", now)
         elif run["fails"] == 0 and store.level(key) == "failing":
-            if send(alerts.collector_recovered(mod.SERVICE)):
+            if _sent(send, alerts.collector_recovered(mod.SERVICE)):
                 store.set_level(key, "ok", now)
         if run["last_ok"] != now:
             continue  # only judge values collected in this cycle
@@ -79,7 +87,8 @@ def evaluate(cfg: Config, store: Store, registry: dict, send: Send, now: int) ->
             if alert == "warn":
                 slope = slope_per_day(store.history(metric, now - 7 * DAY))
                 days = days_to_limit(m.dir, value, limit, slope, now, resets_at(m.resets, now))
-            if send(alerts.metric_message(alert, mod.SERVICE, m, value, limit, round(p * 100), days)):
+            msg = alerts.metric_message(alert, mod.SERVICE, m, value, limit, round(p * 100), days)
+            if _sent(send, msg):
                 store.set_level(metric, level, now)
 
 

@@ -14,9 +14,11 @@ SUPPORT = Metric("Part", "%", "min", "", "rolling", support=True)
 
 # Captures "burnrate" logger output instead of letting it fall through to logging's
 # last-resort handler, which would otherwise print the collector-failing warnings to
-# stderr during this test.
+# stderr during this test. INFO is set explicitly: the root logger defaults to WARNING
+# outside burnrate.py's own basicConfig call, which would otherwise swallow "alert sent".
 LOG = io.StringIO()
 logging.getLogger("burnrate").addHandler(logging.StreamHandler(LOG))
+logging.getLogger("burnrate").setLevel(logging.INFO)
 
 
 class Box:
@@ -40,12 +42,29 @@ def titles(sent: list) -> list[str]:
 
 
 def test_warning_once_then_silence():
+    LOG.truncate(0)
+    LOG.seek(0)
     box, reg, cfg, st = setup(86)
     sent: list = []
     for t in (1, 2, 3):
         poll_once(cfg, st, reg, t * 900, lambda m: sent.append(m) or True)
     assert titles(sent) == ["Warning: Svc used"]
     assert st.level("svc.used") == "warn"
+    assert "alert sent: Warning: Svc used" in LOG.getvalue()
+
+
+def test_floor_recovery_titles_back_above_the_floor():
+    values = {"v": 22.0}
+    reg = {"svc": fakes.service("Svc", {"svc.guard": FLOOR}, lambda env, s: {"svc.guard": values["v"]})}
+    cfg = fakes.config(reg, {"svc.guard": 20})
+    st = Store(cfg.db_path)
+    sent: list = []
+    send = lambda m: sent.append(m) or True  # noqa: E731
+    for t, v in ((900, 22), (1800, 18), (2700, 22), (3600, 30)):
+        values["v"] = v
+        poll_once(cfg, st, reg, t, send)
+    assert titles(sent) == ["Warning: Svc guard", "Limit reached: Svc guard",
+                            "Back above the floor: Svc guard"]
 
 
 def test_jump_past_the_limit_then_back_under():

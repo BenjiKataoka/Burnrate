@@ -32,6 +32,7 @@ deploys_24h = 100
 # "instance_principal" on the Oracle VM itself (no key on disk); "config_file" elsewhere,
 # which reads ~/.oci/config.
 auth = "instance_principal"
+# The compartment that contains the instance; the tenancy OCID if you never created compartments.
 compartment_id = "ocid1.tenancy.oc1..your-tenancy-or-compartment"
 instance_id = "ocid1.instance.oc1.your-region.your-instance"
 # Link speed for the network percentage. A1 gets 1 Gbps per OCPU: set this to your OCPU count.

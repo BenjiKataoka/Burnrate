@@ -2,6 +2,7 @@ import _run
 import io
 import logging
 import os
+import socket
 import tempfile
 import threading
 from contextlib import redirect_stderr, redirect_stdout
@@ -71,7 +72,57 @@ def test_run_polls_then_stops_cleanly():
     stop = threading.Event()
     threading.Timer(0.5, stop.set).start()
     assert run(cfg, reg, stop, send=lambda m: True) == 0
-    assert "svc.used" in Store(cfg.db_path).latest()
+    assert "svc.used" in Store(cfg.db_path).latest(cfg.limits)
+
+
+def test_polling_continues_when_the_api_cannot_bind():
+    reg = {"svc": fakes.service("Svc", {"svc.used": USED}, lambda env, s: {"svc.used": 1.0})}
+    cfg = fakes.config(reg, {"svc.used": 10}, env={"BURNRATE_TOKEN": "t" * 40})
+    cfg.interval_s = 0
+    blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    blocker.bind(("127.0.0.1", 0))
+    blocker.listen(1)
+    cfg.port = blocker.getsockname()[1]
+    buf = io.StringIO()
+    handler = logging.StreamHandler(buf)
+    logging.getLogger("burnrate").addHandler(handler)
+    stop = threading.Event()
+    threading.Timer(2.5, stop.set).start()
+    try:
+        assert run(cfg, reg, stop, send=lambda m: True) == 0
+    finally:
+        logging.getLogger("burnrate").removeHandler(handler)
+        blocker.close()
+    assert "svc.used" in Store(cfg.db_path).latest(cfg.limits)
+    assert buf.getvalue().count("API not listening") == 1
+
+
+def test_api_starts_later_when_the_port_frees():
+    reg = {"svc": fakes.service("Svc", {"svc.used": USED}, lambda env, s: {"svc.used": 1.0})}
+    cfg = fakes.config(reg, {"svc.used": 10}, env={"BURNRATE_TOKEN": "t" * 40})
+    cfg.interval_s = 0
+    blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    blocker.bind(("127.0.0.1", 0))
+    blocker.listen(1)
+    cfg.port = blocker.getsockname()[1]
+    buf = io.StringIO()
+    handler = logging.StreamHandler(buf)
+    burnrate_log = logging.getLogger("burnrate")
+    saved_level = burnrate_log.level
+    burnrate_log.addHandler(handler)
+    burnrate_log.setLevel(logging.INFO)  # "API on" logs at INFO; root defaults to WARNING here
+    ready: dict = {}
+    stop = threading.Event()
+    threading.Timer(1.2, blocker.close).start()
+    threading.Timer(2.8, stop.set).start()
+    try:
+        assert run(cfg, reg, stop, send=lambda m: True,
+                  on_ready=lambda port: ready.update(port=port)) == 0
+    finally:
+        burnrate_log.removeHandler(handler)
+        burnrate_log.setLevel(saved_level)
+    assert "port" in ready
+    assert "API on" in buf.getvalue()
 
 
 def test_a_crashing_cycle_does_not_kill_the_loop():
@@ -111,7 +162,7 @@ def test_run_serves_the_api_while_polling():
     t.start()
     try:
         for _ in range(50):
-            if "port" in ready and "svc.used" in Store(cfg.db_path).latest():
+            if "port" in ready and "svc.used" in Store(cfg.db_path).latest(cfg.limits):
                 break
             threading.Event().wait(0.1)
         req = urllib.request.Request(f"http://127.0.0.1:{ready['port']}/api/status",
