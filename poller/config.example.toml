@@ -27,3 +27,18 @@ users = 50000
 [vercel]
 [vercel.limits]
 deploys_24h = 100
+
+[oracle]
+# "instance_principal" on the Oracle VM itself (no key on disk); "config_file" elsewhere,
+# which reads ~/.oci/config.
+auth = "instance_principal"
+compartment_id = "ocid1.tenancy.oc1..your-tenancy-or-compartment"
+instance_id = "ocid1.instance.oc1.your-region.your-instance"
+# Link speed for the network percentage: A1 gets 1 Gbps per OCPU.
+network_gbps = 1
+[oracle.limits]
+idle_guard = 20
+cpu_p95 = 20
+memory = 20
+network = 20
+outbound_tb = 10
