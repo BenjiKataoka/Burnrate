@@ -10,19 +10,37 @@ SECTION = {"compartment_id": "ocid1.tenancy.oc1..example", "instance_id": "ocid1
            "network_gbps": 1}
 
 
-def standard() -> dict[str, list[float]]:
-    return {"CpuUtilization": [float(v) for v in range(1, 101)],     # p95 by nearest rank = 95
-            "MemoryUtilization": [30.0, 32.0],                         # mean 31
-            "NetworksBytesIn": [300 * 1.25e6] * 4,                     # 10 Mbit/s = 1% of 1 Gbps
-            "NetworksBytesOut": [300 * 0.625e6] * 4,                   # 0.5%
+def _key(query: str) -> tuple[str, str]:
+    # name is before "[", statistic is the call after the last "." (e.g. "rate", "sum")
+    name = query.split("[")[0]
+    stat = query.rsplit(".", 1)[-1].split("(")[0]
+    return name, stat
+
+
+def standard() -> dict[tuple[str, str], list[float]]:
+    return {("CpuUtilization", "mean"): [float(v) for v in range(1, 101)],  # p95 by rank = 95
+            ("MemoryUtilization", "mean"): [30.0, 32.0],                     # mean 31
+            ("NetworksBytesIn", "rate"): [1.25e6] * 4,                       # 10 Mbit/s = 1% of 1 Gbps
+            ("NetworksBytesOut", "rate"): [0.625e6] * 4,                     # 0.5%
+            ("NetworksBytesOut", "increment"): [2e12, 1e12],                 # 3 TB this month
             }
+
+
+def fake_series(data):
+    # keyed on (name, statistic) so a query for the wrong statistic (e.g. .sum() on a
+    # counter) raises KeyError instead of silently reading someone else's fixture
+    return lambda q, s, e: data[_key(q)]
 
 
 def test_collect_computes_the_idle_rule_inputs():
     calls: list = []
     data = standard()
-    out = oracle.collect({}, SECTION, series=lambda q, s, e: (calls.append((q, s, e)) or
-                         ([2e12, 1e12] if "[1h]" in q else data[q.split("[")[0]])), now=NOW)
+
+    def series(q, s, e):
+        calls.append((q, s, e))
+        return data[_key(q)]
+
+    out = oracle.collect({}, SECTION, series=series, now=NOW)
     assert out["oracle.cpu_p95"] == 95.0
     assert out["oracle.memory"] == 31.0
     assert abs(out["oracle.network"] - 1.0) < 1e-9
@@ -38,18 +56,16 @@ def test_collect_computes_the_idle_rule_inputs():
 
 def test_idle_guard_is_the_busiest_of_the_three():
     data = standard()
-    data["CpuUtilization"] = [5.0] * 20
-    out = oracle.collect({}, SECTION, series=lambda q, s, e: [0.0] if "[1h]" in q
-                         else data[q.split("[")[0]], now=NOW)
+    data[("CpuUtilization", "mean")] = [5.0] * 20
+    out = oracle.collect({}, SECTION, series=fake_series(data), now=NOW)
     assert out["oracle.idle_guard"] == 31.0
 
 
 def test_no_cpu_data_is_an_error():
     data = standard()
-    data["CpuUtilization"] = []
+    data[("CpuUtilization", "mean")] = []
     try:
-        oracle.collect({}, SECTION, series=lambda q, s, e: [] if "[1h]" in q
-                       else data[q.split("[")[0]], now=NOW)
+        oracle.collect({}, SECTION, series=fake_series(data), now=NOW)
     except ValueError as e:
         assert "no CpuUtilization data" in str(e)
         return
@@ -58,10 +74,9 @@ def test_no_cpu_data_is_an_error():
 
 def test_empty_memory_is_an_error():
     data = standard()
-    data["MemoryUtilization"] = []
+    data[("MemoryUtilization", "mean")] = []
     try:
-        oracle.collect({}, SECTION, series=lambda q, s, e: [] if "[1h]" in q
-                       else data[q.split("[")[0]], now=NOW)
+        oracle.collect({}, SECTION, series=fake_series(data), now=NOW)
     except ValueError as e:
         assert "no MemoryUtilization data" in str(e)
         return
@@ -70,8 +85,7 @@ def test_empty_memory_is_an_error():
 
 def test_returns_exactly_its_metrics():
     data = standard()
-    out = oracle.collect({}, SECTION, series=lambda q, s, e: [0.0] if "[1h]" in q
-                         else data[q.split("[")[0]], now=NOW)
+    out = oracle.collect({}, SECTION, series=fake_series(data), now=NOW)
     assert set(out) == set(oracle.METRICS)
 
 
@@ -79,10 +93,51 @@ def test_month_start_on_day_one():
     now = datetime(2026, 10, 1, 0, 5, tzinfo=timezone.utc)
     data = standard()
     calls: list = []
-    oracle.collect({}, SECTION, series=lambda q, s, e: (calls.append((q, s, e)) or
-                   ([0.0] if "[1h]" in q else data[q.split("[")[0]])), now=now)
+
+    def series(q, s, e):
+        calls.append((q, s, e))
+        return data[_key(q)]
+
+    oracle.collect({}, SECTION, series=series, now=now)
     month = [c for c in calls if "[1h]" in c[0]]
     assert month[0][1] == datetime(2026, 10, 1, tzinfo=timezone.utc)
+
+
+def test_network_uses_rate_of_the_counter():
+    # rate() bytes/sec direct from Oracle, not a running total: 10 Mbit/s in, 5 Mbit/s out
+    # over a 1 Gbps link is 1% (the larger of the two)
+    data = standard()
+    out = oracle.collect({}, SECTION, series=fake_series(data), now=NOW)
+    assert abs(out["oracle.network"] - 1.0) < 1e-9
+
+
+def test_outbound_uses_the_increment():
+    # increment() per-interval change for the month, not a cumulative counter sum
+    data = standard()
+    out = oracle.collect({}, SECTION, series=fake_series(data), now=NOW)
+    assert out["oracle.outbound_tb"] == 3.0
+
+
+def test_counter_reset_points_are_ignored():
+    # a counter reset (VM/agent restart) can make one rate()/increment() point negative;
+    # those points are dropped rather than pulling the average or the total down
+    data = standard()
+    data[("NetworksBytesIn", "rate")] = [1.25e6, -5e9, 1.25e6]
+    data[("NetworksBytesOut", "increment")] = [1e12, -2e12, 1e12]
+    out = oracle.collect({}, SECTION, series=fake_series(data), now=NOW)
+    assert abs(out["oracle.network"] - 1.0) < 1e-9
+    assert out["oracle.outbound_tb"] == 2.0
+
+
+def test_all_negative_network_is_an_error():
+    data = standard()
+    data[("NetworksBytesIn", "rate")] = [-1.0, -2.0]
+    try:
+        oracle.collect({}, SECTION, series=fake_series(data), now=NOW)
+    except ValueError as e:
+        assert "no NetworksBytesIn data" in str(e)
+        return
+    raise AssertionError("expected ValueError")
 
 
 def test_bad_instance_id_is_refused():
@@ -164,6 +219,7 @@ def test_sdk_path_uses_matching_resolution_and_one_client():
         for details in calls["details"]:
             interval = details.query[details.query.index("[") + 1:details.query.index("]")]
             assert details.resolution == interval
+            assert interval in ("5m", "1h")
 
         client = oracle._clients["instance_principal"]
 

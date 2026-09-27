@@ -3,6 +3,12 @@
 Oracle may reclaim an Always Free VM only when CPU (95th percentile), memory and network
 all stay under 20% for 7 days, so the VM is safe while the busiest of the three is above
 the floor. That busiest value is the idle guard, the only Oracle metric that alerts.
+
+NetworksBytesIn and NetworksBytesOut are cumulative counters that reset when the Oracle
+Cloud Agent restarts, not gauges, so summing raw readings sums running totals rather than
+traffic. rate() gives the per-second average of change and increment() the per-interval
+change; both are used instead, and a reset's one negative point is dropped rather than
+pulling the average or the total down.
 """
 import math
 import re
@@ -14,7 +20,6 @@ from metric import Metric
 SERVICE = "Oracle"
 ENV = ()
 REQUIRED = ("compartment_id", "instance_id", "network_gbps")
-STEP_S = 300  # 5-minute data: 1-minute data is not guaranteed across a 7-day window
 INSTANCE_ID_RE = re.compile(r"ocid1\.instance\.[a-z0-9._-]+")
 Series = Callable[[str, datetime, datetime], list[float]]
 _clients: dict[str, object] = {}  # one MonitoringClient per auth mode, built on first use
@@ -56,13 +61,16 @@ def collect(env: dict[str, str], section: dict, series: Series | None = None,
     cpu_p95 = cpu[max(0, math.ceil(0.95 * len(cpu)) - 1)]  # nearest-rank percentile
     mem = _nonempty("MemoryUtilization", series(f"MemoryUtilization[5m]{rid}.mean()", week, now))
     # ponytail: network % = average rate over the link speed; Oracle does not publish its
-    # exact formula, so this is checked against the console's graphs in Task 13.
+    # exact idle-rule formula, so this is checked against the console's graphs in Task 13.
     link_bits = network_gbps * 1e9
     net = 0.0
     for name in ("NetworksBytesIn", "NetworksBytesOut"):
-        per_step = _nonempty(name, series(f"{name}[5m]{rid}.sum()", week, now))
-        net = max(net, sum(per_step) / len(per_step) / STEP_S * 8 / link_bits * 100)
-    outbound = series(f"NetworksBytesOut[1h]{rid}.sum()", month, now)
+        rate = series(f"{name}[5m]{rid}.rate()", week, now)
+        rate = _nonempty(name, [v for v in rate if v >= 0])  # drop a reset's negative point
+        net = max(net, sum(rate) / len(rate) * 8 / link_bits * 100)
+    # increment() is the counter's per-interval change, not its running total; an empty
+    # series (start of the month) is a real 0 TB, not an error
+    outbound = [v for v in series(f"NetworksBytesOut[1h]{rid}.increment()", month, now) if v >= 0]
 
     memory = sum(mem) / len(mem)
     return {

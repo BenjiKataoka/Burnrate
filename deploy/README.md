@@ -93,7 +93,7 @@ After editing `deploy/burnrate.service`, copy it to the server and re-run `setup
 ```bash
 read -s BURNRATE_TOKEN && export BURNRATE_TOKEN
 deploy/smoke.sh http://<tailscale ip>:8787 <public ip>
-ssh ubuntu@<server> 'sudo -u burnrate sh -c "cd /opt/burnrate/poller && ../venv/bin/python burnrate.py --test-alert --config ../config.toml"'
+ssh ubuntu@<server> 'sudo -u burnrate sh -c "cd /opt/burnrate/poller && /opt/burnrate/venv/bin/python burnrate.py --test-alert --config ../config.toml"'
 ```
 
 Logs: `sudo journalctl -u burnrate -f`. Status: `systemctl status burnrate`.
