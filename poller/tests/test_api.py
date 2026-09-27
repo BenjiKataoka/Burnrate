@@ -84,6 +84,7 @@ def test_rejects_bad_tokens():
         assert get(f"{base}/api/status")[0] == 200
     finally:
         srv.shutdown()
+        srv.server_close()
 
 
 def test_rejects_bad_queries():
@@ -94,11 +95,13 @@ def test_rejects_bad_queries():
         assert get(f"{base}/api/history?metric=svc.used&days=7") == \
             (200, {"metric": "svc.used", "points": [[NOW - 60, 72.0]]})
         for q in ("metric=nope&days=7", "metric=../etc&days=7", "metric=svc.used&days=0",
-                  "metric=svc.used&days=91", "metric=svc.used&days=7abc", "days=7"):
+                  "metric=svc.used&days=91", "metric=svc.used&days=7abc", "days=7",
+                  "metric=svc.used&days=%C2%B2", "metric=svc.used&days=" + "9" * 5000):
             assert get(f"{base}/api/history?{q}")[0] == 400, q
         assert get(f"{base}/api/anything")[0] == 404
     finally:
         srv.shutdown()
+        srv.server_close()
 
 
 def test_post_is_refused():
@@ -108,6 +111,45 @@ def test_post_is_refused():
         assert get(f"{base}/api/status", method="POST")[0] == 501
     finally:
         srv.shutdown()
+        srv.server_close()
+
+
+def test_short_token_is_refused():
+    reg, cfg, st = world()
+    for token in ("", "x" * 31):
+        try:
+            make_server(cfg, st, reg, token)
+        except ValueError:
+            continue
+        raise AssertionError(f"expected ValueError for token={token!r}")
+
+
+def test_unknown_path_without_token_is_401():
+    reg, cfg, st = world()
+    srv, base = serve(cfg, st, reg)
+    try:
+        assert get(f"{base}/nope", token=None) == (401, {"error": "unauthorized"})
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_other_methods_return_no_data():
+    reg, cfg, st = world()
+    srv, base = serve(cfg, st, reg)
+    try:
+        for method in ("HEAD", "OPTIONS"):
+            req = urllib.request.Request(f"{base}/api/status", method=method)
+            req.add_header("Authorization", f"Bearer {TOKEN}")
+            try:
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    code, body = r.status, r.read()
+            except urllib.error.HTTPError as e:
+                code, body = e.code, e.read()
+            assert code != 200 and not body.startswith(b"{"), (method, code, body)
+    finally:
+        srv.shutdown()
+        srv.server_close()
 
 
 if __name__ == "__main__":

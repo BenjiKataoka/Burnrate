@@ -47,6 +47,8 @@ def build_status(cfg: Config, store: Store, registry: dict, now: int) -> dict:
 
 def make_server(cfg: Config, store: Store, registry: dict, token: str,
                 clock: Callable[[], float] = time.time) -> ThreadingHTTPServer:
+    if len(token) < 32:
+        raise ValueError("BURNRATE_TOKEN must be at least 32 characters")
     expected = f"Bearer {token}".encode()
 
     class Handler(BaseHTTPRequestHandler):
@@ -67,7 +69,8 @@ def make_server(cfg: Config, store: Store, registry: dict, token: str,
                 metric, days = q.get("metric", [""])[0], q.get("days", ["7"])[0]
                 if metric not in cfg.limits:
                     return self._send(400, {"error": "unknown metric"})
-                if not days.isdigit() or not 1 <= int(days) <= MAX_DAYS:
+                if (not (days.isascii() and days.isdigit() and len(days) <= 2)
+                        or not 1 <= int(days) <= MAX_DAYS):
                     return self._send(400, {"error": f"days must be 1 to {MAX_DAYS}"})
                 points = store.history(metric, now - int(days) * DAY)
                 return self._send(200, {"metric": metric, "points": [list(p) for p in points]})

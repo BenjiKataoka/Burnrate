@@ -49,7 +49,7 @@ def test_main_exits_2_on_a_config_error():
 
 def test_run_polls_then_stops_cleanly():
     reg = {"svc": fakes.service("Svc", {"svc.used": USED}, lambda env, s: {"svc.used": 1.0})}
-    cfg = fakes.config(reg, {"svc.used": 10})
+    cfg = fakes.config(reg, {"svc.used": 10}, env={"BURNRATE_TOKEN": "t" * 40})
     stop = threading.Event()
     threading.Timer(0.5, stop.set).start()
     assert run(cfg, reg, stop, send=lambda m: True) == 0
@@ -65,7 +65,7 @@ def test_a_crashing_cycle_does_not_kill_the_loop():
         calls.append(args)
         raise RuntimeError("disk full")
     reg = {"svc": fakes.service("Svc", {"svc.used": USED}, lambda env, s: {"svc.used": 1.0})}
-    cfg = fakes.config(reg, {"svc.used": 10})
+    cfg = fakes.config(reg, {"svc.used": 10}, env={"BURNRATE_TOKEN": "t" * 40})
     cfg.interval_s = 0
     original, burnrate.poll_once = burnrate.poll_once, crash
     stop = threading.Event()
