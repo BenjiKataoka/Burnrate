@@ -3,6 +3,7 @@
   python3 burnrate.py               poll forever, store results, send alerts
   python3 burnrate.py --once        poll every service once and print the values (setup check)
   python3 burnrate.py --test-alert  send one message to the Discord webhook (setup check)
+  python3 burnrate.py --check-config  validate config.toml, .env and the database path (deploy check)
 """
 import argparse
 import logging
@@ -82,6 +83,8 @@ def main(argv: list[str] | None = None) -> int:
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--once", action="store_true", help="poll once, print, save nothing")
     mode.add_argument("--test-alert", action="store_true", help="send one Discord message")
+    mode.add_argument("--check-config", action="store_true",
+                       help="validate config and the database path, then exit")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     env = {**read_env_file(HERE.parent / ".env"), **os.environ}
@@ -90,6 +93,14 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as e:
         print(f"burnrate: {e}", file=sys.stderr)
         return 2
+    if args.check_config:
+        try:
+            Store(cfg.db_path)
+        except sqlite3.Error as e:
+            print(f"burnrate: cannot open the database at {cfg.db_path}: {e}", file=sys.stderr)
+            return 1
+        print("Config OK.")
+        return 0
     if args.once:
         return once(cfg, REGISTRY)
     if args.test_alert:

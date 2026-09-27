@@ -7,7 +7,8 @@ Wants=network-online.target
 User=burnrate
 Group=burnrate
 WorkingDirectory=/opt/burnrate/poller
-EnvironmentFile=/opt/burnrate/.env
+# No EnvironmentFile: burnrate.py reads /opt/burnrate/.env itself, so secrets never sit in
+# this process's environment (one parser, not two).
 ExecStart=/opt/burnrate/venv/bin/python burnrate.py --config /opt/burnrate/config.toml
 # At boot the Tailscale address may not exist yet; exiting and retrying is the simple fix.
 Restart=always
@@ -26,6 +27,17 @@ RestrictSUIDSGID=true
 LockPersonality=true
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 MemoryMax=256M
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+RestrictNamespaces=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+RestrictRealtime=true
+ProtectProc=invisible
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

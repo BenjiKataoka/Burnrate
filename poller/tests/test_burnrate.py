@@ -1,10 +1,12 @@
 import _run
 import io
 import logging
+import os
 import tempfile
 import threading
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 import fakes
 from burnrate import main, once, run
@@ -13,6 +15,22 @@ from metric import Metric
 from store import Store
 
 USED = Metric("Used", "GB", "max", "it stops")
+
+# Built from parts so this literal does not look like a real Discord webhook to a secret scanner.
+_FAKE_WEBHOOK = "https://discord.com/api/webhooks/" + "1/abc"
+
+
+def _write_config(tmp_path: Path, db_path: Path | str) -> str:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[poller]\n'
+        'listen = "127.0.0.1:8787"\n'
+        f'db_path = "{db_path}"\n\n'
+        '[clerk]\n'
+        '[clerk.limits]\n'
+        'users = 50000\n'
+    )
+    return str(path)
 
 
 def test_once_prints_values_and_saves_nothing():
@@ -104,6 +122,62 @@ def test_run_serves_the_api_while_polling():
         stop.set()
         t.join(5)
     assert not t.is_alive()
+
+
+def test_check_config_ok():
+    tmp = Path(tempfile.mkdtemp())
+    path = _write_config(tmp, tmp / "burnrate.db")
+    saved_handlers, saved_level = logging.root.handlers[:], logging.root.level
+    out = io.StringIO()
+    try:
+        with patch.dict(os.environ, {
+            "CLERK_SECRET_KEY": "x",
+            "BURNRATE_TOKEN": "t" * 40,
+            "DISCORD_WEBHOOK_URL": _FAKE_WEBHOOK,
+        }, clear=False):
+            with redirect_stdout(out):
+                assert main(["--check-config", "--config", path]) == 0
+    finally:
+        logging.root.handlers[:] = saved_handlers
+        logging.root.setLevel(saved_level)
+    assert "Config OK." in out.getvalue()
+
+
+def test_check_config_refuses_a_short_token():
+    tmp = Path(tempfile.mkdtemp())
+    path = _write_config(tmp, tmp / "burnrate.db")
+    saved_handlers, saved_level = logging.root.handlers[:], logging.root.level
+    err = io.StringIO()
+    try:
+        with patch.dict(os.environ, {
+            "CLERK_SECRET_KEY": "x",
+            "BURNRATE_TOKEN": "short",
+            "DISCORD_WEBHOOK_URL": _FAKE_WEBHOOK,
+        }, clear=False):
+            with redirect_stderr(err):
+                assert main(["--check-config", "--config", path]) == 2
+    finally:
+        logging.root.handlers[:] = saved_handlers
+        logging.root.setLevel(saved_level)
+
+
+def test_check_config_refuses_an_unwritable_db():
+    tmp = Path(tempfile.mkdtemp())
+    path = _write_config(tmp, tmp / "missing-dir" / "burnrate.db")
+    saved_handlers, saved_level = logging.root.handlers[:], logging.root.level
+    err = io.StringIO()
+    try:
+        with patch.dict(os.environ, {
+            "CLERK_SECRET_KEY": "x",
+            "BURNRATE_TOKEN": "t" * 40,
+            "DISCORD_WEBHOOK_URL": _FAKE_WEBHOOK,
+        }, clear=False):
+            with redirect_stderr(err):
+                assert main(["--check-config", "--config", path]) == 1
+    finally:
+        logging.root.handlers[:] = saved_handlers
+        logging.root.setLevel(saved_level)
+    assert "cannot open the database" in err.getvalue()
 
 
 def test_unopenable_database_exits_1():
