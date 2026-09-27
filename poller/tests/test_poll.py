@@ -25,7 +25,7 @@ def test_one_failing_collector_does_not_stop_the_others():
            "bad": fakes.service("Bad", {"bad.used": USED["svc.used"]}, boom)}
     cfg = fakes.config(reg, {"good.used": 10, "bad.used": 10})
     st = fakes.store()
-    poll_once(cfg, st, reg, 1000)
+    poll_once(cfg, st, reg, 1000, lambda m: True)
     assert st.latest() == {"good.used": (1000, 3.0)}
     runs = st.runs()
     assert runs["good"]["fails"] == 0 and runs["good"]["last_ok"] == 1000
@@ -48,7 +48,7 @@ def test_bad_shape_is_a_failure_not_a_crash():
         result = collect_all(cfg, reg)["svc"]
         assert isinstance(result, str), name
         st = fakes.store()
-        poll_once(cfg, st, reg, 5)
+        poll_once(cfg, st, reg, 5, lambda m: True)
         assert st.latest() == {} and st.runs()["svc"]["fails"] == 1, name
 
 
@@ -69,7 +69,7 @@ def test_secrets_from_the_environment_are_redacted():
     reg = {"svc": fakes.service("Svc", USED, leaky)}
     cfg = fakes.config(reg, {"svc.used": 10}, env={"NEON_API_KEY": secret})
     st = fakes.store()
-    poll_once(cfg, st, reg, 1)
+    poll_once(cfg, st, reg, 1, lambda m: True)
     err = st.runs()["svc"]["last_err"]
     assert secret not in err and "[redacted]" in err
 

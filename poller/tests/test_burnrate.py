@@ -52,7 +52,7 @@ def test_run_polls_then_stops_cleanly():
     cfg = fakes.config(reg, {"svc.used": 10})
     stop = threading.Event()
     threading.Timer(0.5, stop.set).start()
-    assert run(cfg, reg, stop) == 0
+    assert run(cfg, reg, stop, send=lambda m: True) == 0
     assert "svc.used" in Store(cfg.db_path).latest()
 
 
@@ -74,7 +74,7 @@ def test_a_crashing_cycle_does_not_kill_the_loop():
     handler = logging.StreamHandler(buf)
     logging.getLogger("burnrate").addHandler(handler)
     try:
-        assert run(cfg, reg, stop) == 0
+        assert run(cfg, reg, stop, send=lambda m: True) == 0
     finally:
         burnrate.poll_once = original
         logging.getLogger("burnrate").removeHandler(handler)
@@ -88,7 +88,7 @@ def test_unopenable_database_exits_1():
     cfg.db_path = str(Path(tempfile.mkdtemp()) / "missing-dir" / "t.db")
     err = io.StringIO()
     with redirect_stderr(err):
-        assert run(cfg, reg, threading.Event()) == 1
+        assert run(cfg, reg, threading.Event(), send=lambda m: True) == 1
     assert "cannot open the database" in err.getvalue()
 
 

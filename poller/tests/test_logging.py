@@ -23,7 +23,7 @@ def test_a_failing_collector_never_leaks_secrets():
     handler = logging.StreamHandler(buf)
     logging.getLogger("burnrate").addHandler(handler)
     try:
-        poll_once(cfg, st, reg, 1)
+        poll_once(cfg, st, reg, 1, lambda m: True)
     finally:
         logging.getLogger("burnrate").removeHandler(handler)
     stored = st.runs()["svc"]["last_err"]

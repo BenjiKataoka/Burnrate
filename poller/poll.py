@@ -1,14 +1,19 @@
-"""One poll cycle: run every collector, store what came back, record what failed."""
+"""One poll cycle: run every collector, store what came back, record what failed, then
+decide which alerts to send."""
 import logging
 import math
+from collections.abc import Callable
 
+import alerts
 from config import Config
 from fetch import FetchError
+from levels import DAY, days_to_limit, next_level, pressure, resets_at, slope_per_day
 from store import Store
 
 log = logging.getLogger("burnrate")
 SECRET_VARS = ("NEON_API_KEY", "CLERK_SECRET_KEY", "VERCEL_TOKEN", "DISCORD_WEBHOOK_URL",
                "BURNRATE_TOKEN")
+Send = Callable[[dict], bool]
 
 
 def describe_error(e: Exception, secrets: list[str]) -> str:
@@ -43,7 +48,42 @@ def collect_all(cfg: Config, registry: dict) -> dict[str, dict[str, float] | str
     return out
 
 
-def poll_once(cfg: Config, store: Store, registry: dict, now: int) -> None:
+def evaluate(cfg: Config, store: Store, registry: dict, send: Send, now: int) -> None:
+    """Alert on level changes only. A level is saved after Discord accepts the message, so
+    a failed send is retried next poll and a restart never repeats one."""
+    latest, runs = store.latest(), store.runs()
+    for name in cfg.services:
+        mod = registry[name]
+        run = runs.get(name, {"fails": 0, "last_ok": None, "last_err": None})
+        key = f"collector:{name}"
+        if run["fails"] >= cfg.fail_alert_after and store.level(key) != "failing":
+            if send(alerts.collector_failing(mod.SERVICE, run["last_err"] or "unknown error")):
+                store.set_level(key, "failing", now)
+        elif run["fails"] == 0 and store.level(key) == "failing":
+            if send(alerts.collector_recovered(mod.SERVICE)):
+                store.set_level(key, "ok", now)
+        if run["last_ok"] != now:
+            continue  # only judge values collected in this cycle
+        for metric, m in mod.METRICS.items():
+            if m.support or metric not in latest:
+                continue
+            value, limit = latest[metric][1], cfg.limits[metric]
+            p = pressure(m.dir, value, limit)
+            prev = store.level(metric)
+            level, alert = next_level(prev, p, cfg.thresholds)
+            if alert is None:
+                if level != prev:
+                    store.set_level(metric, level, now)
+                continue
+            days = None
+            if alert == "warn":
+                slope = slope_per_day(store.history(metric, now - 7 * DAY))
+                days = days_to_limit(m.dir, value, limit, slope, now, resets_at(m.resets, now))
+            if send(alerts.metric_message(alert, mod.SERVICE, m, value, limit, round(p * 100), days)):
+                store.set_level(metric, level, now)
+
+
+def poll_once(cfg: Config, store: Store, registry: dict, now: int, send: Send) -> None:
     for name, result in collect_all(cfg, registry).items():
         if isinstance(result, str):
             fails = store.run_failed(name, now, result)
@@ -51,3 +91,4 @@ def poll_once(cfg: Config, store: Store, registry: dict, now: int) -> None:
         else:
             store.add_snapshots(now, result)
             store.run_ok(name, now)
+    evaluate(cfg, store, registry, send, now)
