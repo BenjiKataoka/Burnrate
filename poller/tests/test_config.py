@@ -92,8 +92,16 @@ def test_serving_needs_a_long_token_and_a_discord_webhook():
 
 
 def test_every_interface_is_refused():
-    for host in ("0.0.0.0", "[::]", "::", ""):
-        assert "refused" in error_of(GOOD.replace("127.0.0.1", host))
+    msg = "listen host must be 127.0.0.1 or a Tailscale address (100.64.0.0/10)"  # scan:allow
+    for host in ("0.0.0.0", "[::]", "::", "", "0", "::0", "10.0.0.5", "192.168.1.5",
+                "example.com"):
+        assert msg in error_of(GOOD.replace("127.0.0.1", host)), host
+
+
+def test_loopback_and_tailscale_are_accepted():
+    for host in ("127.0.0.1", "localhost", "100.101.102.103"):  # fake test address, scan:allow
+        cfg = load_config(write(GOOD.replace("127.0.0.1", host)), REGISTRY, ENV, serving=False)
+        assert cfg.host == host
 
 
 def test_bad_listen():

@@ -82,6 +82,30 @@ def test_a_crashing_cycle_does_not_kill_the_loop():
     assert len(calls) >= 2
 
 
+def test_run_serves_the_api_while_polling():
+    import json
+    import urllib.request
+    reg = {"svc": fakes.service("Svc", {"svc.used": USED}, lambda env, s: {"svc.used": 1.0})}
+    cfg = fakes.config(reg, {"svc.used": 10}, env={"BURNRATE_TOKEN": "t" * 40})
+    stop, ready = threading.Event(), {}
+    t = threading.Thread(target=lambda: run(cfg, reg, stop, send=lambda m: True,
+                                            on_ready=lambda port: ready.update(port=port)))
+    t.start()
+    try:
+        for _ in range(50):
+            if "port" in ready and "svc.used" in Store(cfg.db_path).latest():
+                break
+            threading.Event().wait(0.1)
+        req = urllib.request.Request(f"http://127.0.0.1:{ready['port']}/api/status",
+                                     headers={"Authorization": "Bearer " + "t" * 40})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            assert json.loads(r.read())["metrics"][0]["value"] == 1.0
+    finally:
+        stop.set()
+        t.join(5)
+    assert not t.is_alive()
+
+
 def test_unopenable_database_exits_1():
     reg = {"svc": fakes.service("Svc", {"svc.used": USED}, lambda env, s: {"svc.used": 1.0})}
     cfg = fakes.config(reg, {"svc.used": 10})

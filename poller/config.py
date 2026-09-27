@@ -1,4 +1,5 @@
 """Loads config.toml and the environment, and refuses to start on anything missing or unsafe."""
+import ipaddress
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,7 +26,8 @@ class Config:
 
 
 WEBHOOK_PREFIXES = ("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/")
-EVERY_INTERFACE = ("", "0.0.0.0", "::", "[::]")
+LOOPBACK_NET = ipaddress.ip_network("127.0.0.0/8")
+TAILSCALE_NET = ipaddress.ip_network("100.64.0.0/10")  # CGNAT range, not a real address; scan:allow
 
 
 def _setting(poller: dict, key: str, default: float, low: float, high: float) -> float:
@@ -96,9 +98,16 @@ def load_config(path: Path, registry: dict[str, ModuleType], env: dict[str, str]
     port_int = int(port)
     if not 1 <= port_int <= 65535:
         raise ConfigError("[poller] listen port must be 1 to 65535")
-    if host in EVERY_INTERFACE:
-        raise ConfigError("listening on every interface is refused; use 127.0.0.1 or the "
-                          "machine's Tailscale IP")
+    if host != "localhost":
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            ip = None
+        allowed = isinstance(ip, ipaddress.IPv4Address) and (
+            ip in LOOPBACK_NET or ip in TAILSCALE_NET)
+        if not allowed:
+            raise ConfigError("listen host must be 127.0.0.1 or a Tailscale address "
+                              "(100.64.0.0/10)")  # scan:allow
 
     if serving:
         if len(env.get("BURNRATE_TOKEN", "")) < 32:
