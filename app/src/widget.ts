@@ -3,8 +3,8 @@ import { makeClient, type Result } from "./api.ts";
 import { byService, cells, esc, eta, pct, trayTitle, widgetOrbStyle, worst, type MetricRow, type Status } from "./model.ts";
 import { mountOrb } from "./orb.ts";
 import {
-  autostart, getFetch, getFlag, loadSettings, onSettingsSaved, openDashboard, placeWidget, quit, setFlag, setPinned,
-  startDrag,
+  autostart, getFetch, getFlag, loadSettings, onSettingsSaved, openDashboard, placeWidget, quit, requestSettings,
+  setFlag, setPinned, startDrag,
 } from "./platform.ts";
 import { createTray } from "./tray.ts";
 
@@ -86,7 +86,9 @@ root.addEventListener("mousedown", (e) => {
   if (target.closest("[data-drag]")) void startDrag();
 });
 root.addEventListener("click", (e) => {
-  if ((e.target as HTMLElement).closest("[data-drag]")) return;
+  const target = e.target as HTMLElement;
+  if (target.closest("[data-drag]")) return;
+  if (target.closest("#setup")) void requestSettings();
   void openDashboard();
 });
 root.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") void openDashboard(); });
@@ -95,16 +97,30 @@ async function main(): Promise<void> {
   await placeWidget(220);
   await setPinned(pinned);
   // Dev builds must never register target/debug/app as a login item.
-  if (import.meta.env.PROD && !(await getFlag("autostart_set"))) {
-    // Best effort: an unsigned app can fail to register as a login item, and that must
-    // never block startup. Set the flag either way so we don't retry every launch; the
-    // user can still turn it on from the menu.
+  if (import.meta.env.PROD) {
     try {
-      await autostart.set(true);
+      if (!(await getFlag("autostart_set"))) {
+        // Best effort: an unsigned app can fail to register as a login item, and that must
+        // never block startup. Set the flag either way so we don't retry every launch; the
+        // user can still turn it on from the menu.
+        try {
+          await autostart.set(true);
+        } catch {
+          // Nothing to do: isEnabled() below reports what's actually true.
+        }
+        await setFlag("autostart_set");
+      }
     } catch {
-      // Nothing to do: isEnabled() below reports what's actually true.
+      // First-launch bookkeeping (store reads/writes) must never abort main() before the
+      // tray, and its Quit item, exist.
     }
-    await setFlag("autostart_set");
+    try {
+      // The LaunchAgent plist pins the executable path at enable() time; if the app moved
+      // since, re-write it with the current path so autostart still points at the right binary.
+      if (await autostart.isEnabled()) await autostart.set(true);
+    } catch {
+      // Best effort, same as above.
+    }
   }
   let atLogin = await autostart.isEnabled();
   tray = await createTray({

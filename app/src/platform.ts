@@ -8,7 +8,8 @@ const PREVIEW: Settings = { url: "http://127.0.0.1:8787", token: "preview" };
 export async function getFetch(): Promise<Fetch> {
   if (inTauri) {
     const { fetch } = await import("@tauri-apps/plugin-http");
-    return (url, init) => fetch(url, { headers: init.headers, signal: init.signal, connectTimeout: 10_000 });
+    // The token must never follow a redirect (same rule as the poller's own HTTP client).
+    return (url, init) => fetch(url, { headers: init.headers, signal: init.signal, connectTimeout: 10_000, maxRedirections: 0 });
   }
   return previewFetch;
 }
@@ -70,6 +71,20 @@ export async function onSettingsSaved(cb: () => void): Promise<void> {
   if (!inTauri) return;
   const { listen } = await import("@tauri-apps/api/event");
   await listen("settings-saved", cb);
+}
+
+// Lets the widget's "Open settings" button land the dashboard on the settings form
+// instead of whatever it was last showing.
+export async function requestSettings(): Promise<void> {
+  if (!inTauri) return;
+  const { emit } = await import("@tauri-apps/api/event");
+  await emit("show-settings");
+}
+
+export async function onShowSettings(cb: () => void): Promise<void> {
+  if (!inTauri) return;
+  const { listen } = await import("@tauri-apps/api/event");
+  await listen("show-settings", cb);
 }
 
 export async function openDashboard(): Promise<void> {

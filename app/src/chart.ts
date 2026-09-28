@@ -10,7 +10,7 @@ function el(name: string, attrs: Record<string, string | number>): SVGElement {
 }
 
 export function renderChart(host: HTMLElement, r: MetricRow, points: Point[], days: number,
-                            onDays: (d: number) => void): void {
+                            onDays: (d: number) => void, notice: string | null = null): void {
   host.innerHTML = `<header><h3><span class="t"></span> <span class="e"></span></h3>
       <div class="tabs"><button data-d="7">7 days</button><button data-d="30">30 days</button></div></header>
     <svg class="plot" role="img"></svg><div class="readout"></div>`;
@@ -27,7 +27,7 @@ export function renderChart(host: HTMLElement, r: MetricRow, points: Point[], da
   const { width, height } = svg.getBoundingClientRect();
   const geo = chartGeometry(points, r, days, width, height, now);
   const idle = "Hover to read a value. The dashed line is the projection from the last 7 days.";
-  readout.textContent = geo ? idle : "No history for this period yet.";
+  readout.textContent = geo ? idle : (notice ?? "No history for this period yet.");
   if (!geo) return;
   const colour = COLOUR[r.level ?? "ok"];
   const edge = r.dir === "min" ? "Idle floor" : "Limit";

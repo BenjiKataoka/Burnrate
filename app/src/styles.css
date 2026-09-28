@@ -15,6 +15,11 @@ button { font: inherit; color: inherit; }
 .num { font-family: var(--mono); letter-spacing: -0.01em; }
 .lv-ok { color: var(--ink); } .lv-warn { color: var(--warn); } .lv-crit { color: var(--crit); }
 
+/* Paper Shaders normally injects this via a runtime <style data-paper-shader>, which the
+   production CSP's style-src 'self' blocks. Both orb hosts below are already positioned, so
+   this is the only rule the canvas needs to fill its box. */
+[data-paper-shader] canvas { display: block; position: absolute; inset: 0; width: 100%; height: 100%; }
+
 /* Widget */
 .widget-page { overflow: hidden; }
 .widget { position: relative; height: 100vh; padding: 12px 12px 10px; cursor: pointer; border: 1px solid #2a2927; }
@@ -41,7 +46,7 @@ button { font: inherit; color: inherit; }
 
 /* Dashboard */
 .dashboard-page { height: 100vh; overflow: hidden; }
-.dash { height: 100vh; display: grid; grid-template-columns: 250px 1fr; }
+.dash { height: 100vh; display: grid; grid-template-columns: 250px 1fr; grid-template-rows: minmax(0, 1fr); }
 .side { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; position: relative; overflow: hidden; }
 .side > :not(.orb) { position: relative; z-index: 1; }
 .hero { padding: 26px 20px 0; }
@@ -76,7 +81,7 @@ button { font: inherit; color: inherit; }
 .chart header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .chart h3 { margin: 0; font-size: 12.5px; font-weight: 600; } .chart h3 span { font-weight: 400; color: var(--dim); }
 .tabs { display: flex; gap: 4px; } .tabs button[aria-pressed="true"] { background: #2a2926; }
-.plot { width: 100%; flex: 1; display: block; overflow: visible; cursor: crosshair; }
+.plot { width: 100%; flex: 1; min-height: 0; display: block; overflow: visible; cursor: crosshair; }
 .readout { font-size: 11.5px; color: var(--dim); height: 16px; margin-top: 6px; }
 .settings { padding: 24px; max-width: 460px; }
 .settings h2 { font-size: 15px; margin: 0 0 6px; }

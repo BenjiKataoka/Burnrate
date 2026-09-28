@@ -6,7 +6,7 @@ import {
   type MetricRow, type Status,
 } from "./model.ts";
 import { mountOrb } from "./orb.ts";
-import { getFetch, hideCurrentOnClose, inTauri, loadSettings, saveSettings } from "./platform.ts";
+import { getFetch, hideCurrentOnClose, inTauri, loadSettings, onShowSettings, saveSettings } from "./platform.ts";
 
 const REFRESH_MS = 5 * 60_000;
 const app = document.getElementById("app") as HTMLElement;
@@ -34,7 +34,7 @@ function cellsHtml(r: MetricRow): string {
   const { filled, floorAt } = cells(r, 20, false);
   const cls = r.support ? "on-support" : `on-${esc(r.level ?? "ok")}`;
   return Array.from({ length: 20 }, (_, i) => `<span class="${i < filled ? cls : ""}"></span>`).join("")
-    + (floorAt === null ? "" : `<i class="floor" data-floor="${floorAt}"></i>`);
+    + (floorAt === null ? "" : `<i class="floor" data-floor="${esc(String(floorAt))}"></i>`);
 }
 
 function renderSide(result: Result<Status>): void {
@@ -99,13 +99,18 @@ function renderMain(result: Result<Status>): void {
   void drawChart();
 }
 
+let chartReq = 0;
+
 async function drawChart(): Promise<void> {
   const host = document.getElementById("chart");
   if (!host || !status || !selected) return;
+  const reqId = ++chartReq;
   const r = status.metrics.find((m) => m.metric === selected) as MetricRow;
   const client = makeClient(await loadSettings(), await getFetch());
   const res = await client.history(r.metric, days);
-  renderChart(host, r, res.kind === "ok" ? res.data.points : [], days, (d) => { days = d; void drawChart(); });
+  if (reqId !== chartReq) return; // a newer click already superseded this request
+  const notice = res.kind === "ok" ? null : (connectionText(res, lastOkAt) ?? "Can't load history right now.");
+  renderChart(host, r, res.kind === "ok" ? res.data.points : [], days, (d) => { days = d; void drawChart(); }, notice);
 }
 
 function showSettings(message = ""): void {
@@ -151,6 +156,7 @@ async function refresh(): Promise<void> {
 (document.getElementById("refresh") as HTMLElement).addEventListener("click", () => void refresh());
 (document.getElementById("open-settings") as HTMLElement).addEventListener("click", () => showSettings());
 void hideCurrentOnClose();
+void onShowSettings(() => showSettings());
 void refresh();
 setInterval(() => void refresh(), REFRESH_MS);
 window.addEventListener("focus", () => void refresh());
