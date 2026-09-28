@@ -1,0 +1,23 @@
+{
+  "polled_at": 1790500000,
+  "next_poll_at": 1790500900,
+  "interval_s": 900,
+  "collectors": {
+    "Neon": {"last_ok": 1790500000, "failing": false, "error": null},
+    "Clerk": {"last_ok": 1790500000, "failing": false, "error": null},
+    "Vercel": {"last_ok": 1790500000, "failing": false, "error": null},
+    "Oracle": {"last_ok": 1790500000, "failing": false, "error": null}
+  },
+  "metrics": [
+    {"metric": "neon.compute_cu_hours", "service": "Neon", "label": "Compute", "unit": "CU-h", "dir": "max", "value": 7.361, "limit": 100, "pressure": 0.0736, "level": "ok", "at_limit": "the database is suspended until next month", "resets_at": 1790812800, "updated": 1790500000, "stale": false, "support": false, "slope_per_day": 0.3, "days_to_limit": null},
+    {"metric": "neon.transfer_gb", "service": "Neon", "label": "Transfer", "unit": "GB", "dir": "max", "value": 0.0557, "limit": 5, "pressure": 0.0111, "level": "ok", "at_limit": "the database is suspended until next month", "resets_at": 1790812800, "updated": 1790500000, "stale": false, "support": false, "slope_per_day": 0.002, "days_to_limit": null},
+    {"metric": "neon.storage_gb", "service": "Neon", "label": "Storage", "unit": "GB", "dir": "max", "value": 0.0337, "limit": 0.5, "pressure": 0.0674, "level": "ok", "at_limit": "writes fail", "resets_at": null, "updated": 1790500000, "stale": false, "support": false, "slope_per_day": 0.0002, "days_to_limit": null},
+    {"metric": "oracle.idle_guard", "service": "Oracle", "label": "Idle guard", "unit": "%", "dir": "min", "value": 16.11, "limit": 20, "pressure": 1.2415, "level": "crit", "at_limit": "Oracle can reclaim the VM", "resets_at": null, "updated": 1790500000, "stale": false, "support": false, "slope_per_day": 0.4, "days_to_limit": null},
+    {"metric": "oracle.cpu_p95", "service": "Oracle", "label": "CPU p95", "unit": "%", "dir": "min", "value": 2.21, "limit": 20, "pressure": 1.5, "level": "crit", "at_limit": "", "resets_at": null, "updated": 1790500000, "stale": false, "support": true, "slope_per_day": null, "days_to_limit": null},
+    {"metric": "oracle.memory", "service": "Oracle", "label": "Memory", "unit": "%", "dir": "min", "value": 16.11, "limit": 20, "pressure": 1.2415, "level": "crit", "at_limit": "", "resets_at": null, "updated": 1790500000, "stale": false, "support": true, "slope_per_day": null, "days_to_limit": null},
+    {"metric": "oracle.network", "service": "Oracle", "label": "Network", "unit": "%", "dir": "min", "value": 0.003, "limit": 20, "pressure": 1.5, "level": "crit", "at_limit": "", "resets_at": null, "updated": 1790500000, "stale": false, "support": true, "slope_per_day": null, "days_to_limit": null},
+    {"metric": "oracle.outbound_tb", "service": "Oracle", "label": "Outbound", "unit": "TB", "dir": "max", "value": 0.000365, "limit": 10, "pressure": 0.0, "level": "ok", "at_limit": "Oracle charges for or throttles transfer", "resets_at": 1790812800, "updated": 1790500000, "stale": false, "support": false, "slope_per_day": 0.00001, "days_to_limit": null},
+    {"metric": "clerk.users", "service": "Clerk", "label": "Users", "unit": "", "dir": "max", "value": 8, "limit": 50000, "pressure": 0.0002, "level": "ok", "at_limit": "an upgrade is required", "resets_at": null, "updated": 1790500000, "stale": false, "support": false, "slope_per_day": null, "days_to_limit": null},
+    {"metric": "vercel.deploys_24h", "service": "Vercel", "label": "Deploys in 24 hours", "unit": "", "dir": "max", "value": 0, "limit": 100, "pressure": 0, "level": "ok", "at_limit": "deploys are blocked", "resets_at": null, "updated": 1790500000, "stale": false, "support": false, "slope_per_day": null, "days_to_limit": null}
+  ]
+}
