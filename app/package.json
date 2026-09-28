@@ -1,0 +1,28 @@
+{
+  "name": "app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "test": "node --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@paper-design/shaders": "0.0.81",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-autostart": "^2.6.0",
+    "@tauri-apps/plugin-http": "^2.7.0",
+    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-store": "^2.5.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/node": "^26.6.3",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.16"
+  }
+}
