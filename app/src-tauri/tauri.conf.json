@@ -22,7 +22,8 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "focus": false,
-        "visible": true
+        "visible": true,
+        "backgroundThrottling": "disabled"
       },
       {
         "label": "dashboard",
