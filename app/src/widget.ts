@@ -96,7 +96,14 @@ async function main(): Promise<void> {
   await setPinned(pinned);
   // Dev builds must never register target/debug/app as a login item.
   if (import.meta.env.PROD && !(await getFlag("autostart_set"))) {
-    await autostart.set(true);
+    // Best effort: an unsigned app can fail to register as a login item, and that must
+    // never block startup. Set the flag either way so we don't retry every launch; the
+    // user can still turn it on from the menu.
+    try {
+      await autostart.set(true);
+    } catch {
+      // Nothing to do: isEnabled() below reports what's actually true.
+    }
     await setFlag("autostart_set");
   }
   let atLogin = await autostart.isEnabled();
