@@ -3,7 +3,8 @@ import { makeClient, type Result } from "./api.ts";
 import { byService, cells, esc, eta, pct, trayTitle, widgetOrbStyle, worst, type MetricRow, type Status } from "./model.ts";
 import { mountOrb } from "./orb.ts";
 import {
-  autostart, getFetch, loadSettings, onSettingsSaved, openDashboard, placeWidget, quit, setPinned, startDrag,
+  autostart, getFetch, getFlag, loadSettings, onSettingsSaved, openDashboard, placeWidget, quit, setFlag, setPinned,
+  startDrag,
 } from "./platform.ts";
 import { createTray } from "./tray.ts";
 
@@ -93,6 +94,11 @@ root.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " "
 async function main(): Promise<void> {
   await placeWidget(220);
   await setPinned(pinned);
+  // Dev builds must never register target/debug/app as a login item.
+  if (import.meta.env.PROD && !(await getFlag("autostart_set"))) {
+    await autostart.set(true);
+    await setFlag("autostart_set");
+  }
   let atLogin = await autostart.isEnabled();
   tray = await createTray({
     open: () => void openDashboard(),

@@ -117,6 +117,20 @@ export async function startDrag(): Promise<void> {
   await getCurrentWindow().startDragging();
 }
 
+export async function getFlag(name: string): Promise<boolean> {
+  if (!inTauri) return true;
+  const { load } = await import("@tauri-apps/plugin-store");
+  return (await (await load("settings.json", { autoSave: false })).get<boolean>(name)) === true;
+}
+
+export async function setFlag(name: string): Promise<void> {
+  if (!inTauri) return;
+  const { load } = await import("@tauri-apps/plugin-store");
+  const store = await load("settings.json", { autoSave: false });
+  await store.set(name, true);
+  await store.save();
+}
+
 export const autostart = {
   async isEnabled(): Promise<boolean> {
     if (!inTauri) return false;
