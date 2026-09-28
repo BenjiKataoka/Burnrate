@@ -122,7 +122,8 @@ async function main(): Promise<void> {
       // Best effort, same as above.
     }
   }
-  let atLogin = await autostart.isEnabled();
+  // A failed check must not stop the tray (and its Quit item) from being created.
+  let atLogin = await autostart.isEnabled().catch(() => false);
   tray = await createTray({
     open: () => void openDashboard(),
     refresh: () => void refresh(),
