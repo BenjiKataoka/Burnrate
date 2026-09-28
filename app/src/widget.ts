@@ -98,9 +98,19 @@ async function main(): Promise<void> {
     open: () => void openDashboard(),
     refresh: () => void refresh(),
     pinned,
-    togglePin: () => { pinned = !pinned; void setPinned(pinned); },
+    togglePin: () => { pinned = !pinned; void setPinned(pinned); return pinned; },
     atLogin,
-    toggleLogin: () => { atLogin = !atLogin; void autostart.set(atLogin); },
+    toggleLogin: async () => {
+      const target = !atLogin;
+      try {
+        await autostart.set(target);
+        atLogin = target;
+      } catch {
+        // The set failed: show what's actually true, not what we attempted.
+        atLogin = await autostart.isEnabled();
+      }
+      return atLogin;
+    },
     quit: () => void quit(),
   });
   await onSettingsSaved(() => void refresh());

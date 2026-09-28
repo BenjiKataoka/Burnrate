@@ -1,8 +1,8 @@
 import { inTauri } from "./platform.ts";
 
 export type TrayHandlers = {
-  open(): void; refresh(): void; pinned: boolean; togglePin(): void;
-  atLogin: boolean; toggleLogin(): void; quit(): void;
+  open(): void; refresh(): void; pinned: boolean; togglePin(): boolean;
+  atLogin: boolean; toggleLogin(): Promise<boolean>; quit(): void;
 };
 
 export async function createTray(h: TrayHandlers): Promise<{ setTitle(title: string): Promise<void> }> {
@@ -10,8 +10,18 @@ export async function createTray(h: TrayHandlers): Promise<{ setTitle(title: str
   const { TrayIcon } = await import("@tauri-apps/api/tray");
   const { Menu, CheckMenuItem, PredefinedMenuItem } = await import("@tauri-apps/api/menu");
   const { defaultWindowIcon } = await import("@tauri-apps/api/app");
-  const pin = await CheckMenuItem.new({ id: "pin", text: "Keep widget on top", checked: h.pinned, action: h.togglePin });
-  const login = await CheckMenuItem.new({ id: "login", text: "Start at login", checked: h.atLogin, action: h.toggleLogin });
+  // The item's own checked state can drift from the real one (a click already flips it
+  // visually), so every toggle re-asserts the true value with setChecked.
+  let pin: Awaited<ReturnType<typeof CheckMenuItem.new>>;
+  pin = await CheckMenuItem.new({
+    id: "pin", text: "Keep widget on top", checked: h.pinned,
+    action: () => { void pin.setChecked(h.togglePin()); },
+  });
+  let login: Awaited<ReturnType<typeof CheckMenuItem.new>>;
+  login = await CheckMenuItem.new({
+    id: "login", text: "Start at login", checked: h.atLogin,
+    action: () => { void h.toggleLogin().then((value) => login.setChecked(value)); },
+  });
   const menu = await Menu.new({
     items: [
       { id: "open", text: "Open dashboard", action: h.open },
