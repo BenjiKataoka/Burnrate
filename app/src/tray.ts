@@ -8,7 +8,7 @@ export type TrayHandlers = {
 export async function createTray(h: TrayHandlers): Promise<{ setTitle(title: string): Promise<void> }> {
   if (!inTauri) return { setTitle: async (title: string) => { document.title = title; } };
   const { TrayIcon } = await import("@tauri-apps/api/tray");
-  const { Menu, CheckMenuItem, PredefinedMenuItem } = await import("@tauri-apps/api/menu");
+  const { Menu, MenuItem, CheckMenuItem, PredefinedMenuItem } = await import("@tauri-apps/api/menu");
   const { defaultWindowIcon } = await import("@tauri-apps/api/app");
   // The item's own checked state can drift from the real one (a click already flips it
   // visually), so every toggle re-asserts the true value with setChecked.
@@ -22,14 +22,16 @@ export async function createTray(h: TrayHandlers): Promise<{ setTitle(title: str
     id: "login", text: "Start at login", checked: h.atLogin,
     action: () => { void h.toggleLogin().then((value) => login.setChecked(value)); },
   });
+  // Items must be created with .new(): object literals inside Menu.new are dropped once the
+  // menu is built, and Tauri drops their click handlers with them (tauri 2.12 menu/plugin.rs).
   const menu = await Menu.new({
     items: [
-      { id: "open", text: "Open dashboard", action: h.open },
-      { id: "refresh", text: "Refresh now", action: h.refresh },
+      await MenuItem.new({ id: "open", text: "Open dashboard", action: h.open }),
+      await MenuItem.new({ id: "refresh", text: "Refresh now", action: h.refresh }),
       pin,
       login,
       await PredefinedMenuItem.new({ item: "Separator" }),
-      { id: "quit", text: "Quit Burnrate", action: h.quit },
+      await MenuItem.new({ id: "quit", text: "Quit Burnrate", action: h.quit }),
     ],
   });
   const tray = await TrayIcon.new({
