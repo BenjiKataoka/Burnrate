@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  DAY, amount, ago, byService, cells, chartGeometry, consequence, esc, eta, firstPollText,
+  DAY, amount, ago, byService, cells, chartGeometry, connectionText, consequence, esc, eta, firstPollText,
   fmt, orbStyle, pct, readAt, trayTitle, widgetOrbStyle, worst,
   type MetricRow, type Status,
 } from "../src/model.ts";
@@ -136,6 +136,15 @@ test("chart geometry", () => {
   const future = readAt(g, 700, r);
   assert.equal(future.projected, true);
   assert.ok(future.v > 0.6);
+});
+
+test("connection banner text", () => {
+  assert.equal(connectionText({ kind: "ok" }, NOW), null);
+  assert.equal(connectionText({ kind: "unauthorized" }, null), "The server rejected the token. Check it in Settings.");
+  assert.equal(connectionText({ kind: "unconfigured" }, null), "Connect Burnrate to your poller in Settings.");
+  const since = new Date((NOW - 600) * 1000).toTimeString().slice(0, 5);
+  assert.equal(connectionText({ kind: "unreachable" }, NOW - 600), `Can't reach the server since ${since}. Showing the last data.`);
+  assert.equal(connectionText({ kind: "unreachable" }, null), "Can't reach the server.");
 });
 
 test("esc", () => {

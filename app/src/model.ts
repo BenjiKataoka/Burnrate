@@ -184,6 +184,14 @@ export function readAt(geo: ChartGeo, px: number, r: MetricRow): { t: number; v:
   return { t: nearest[0], v: nearest[1], projected: false };
 }
 
+export function connectionText(result: { kind: string }, lastOkAt: number | null): string | null {
+  if (result.kind === "ok") return null;
+  if (result.kind === "unauthorized") return "The server rejected the token. Check it in Settings.";
+  if (result.kind === "unconfigured") return "Connect Burnrate to your poller in Settings.";
+  if (lastOkAt === null) return "Can't reach the server.";
+  return `Can't reach the server since ${new Date(lastOkAt * 1000).toTimeString().slice(0, 5)}. Showing the last data.`;
+}
+
 export function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
 }
